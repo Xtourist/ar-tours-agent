@@ -10,6 +10,39 @@ app.use(express.json());
 const conversationHistory = new Map();
 const MAX_HISTORY = 20;
 
+// --- Human handoff state ---
+// Map<phoneNumber, { since: timestamp, reason: string }>
+const humanHandoff = new Map();
+const HANDOFF_DURATION_MS = 12 * 60 * 60 * 1000; // 12 hours before auto-resuming the bot
+
+const HANDOFF_KEYWORDS = [
+  'agent', 'human', 'representative', 'real person', 'speak to someone',
+  'speak to a person', 'talk to someone', 'talk to a person', 'manager',
+  'complaint', 'complain', 'urgent', 'call me', 'refund'
+];
+
+const FALLBACK_PHRASE = "that's a great question. i'll have one of our travel specialists confirm the details and get back to you shortly.";
+
+function isHandoffTriggered(messageText) {
+  const lower = messageText.toLowerCase();
+  return HANDOFF_KEYWORDS.some(kw => lower.includes(kw));
+}
+
+function isInHandoff(phoneNumber) {
+  const entry = humanHandoff.get(phoneNumber);
+  if (!entry) return false;
+  if (Date.now() - entry.since > HANDOFF_DURATION_MS) {
+    humanHandoff.delete(phoneNumber);
+    return false;
+  }
+  return true;
+}
+
+function startHandoff(phoneNumber, reason) {
+  humanHandoff.set(phoneNumber, { since: Date.now(), reason });
+  console.log(`HANDOFF STARTED for ${phoneNumber} — reason: ${reason}. Bot will pause auto-replies; reply manually from WhatsApp Manager inbox.`);
+}
+
 // Webhook GET verification
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
@@ -67,6 +100,24 @@ async function handleCustomerMessage(phoneNumber, userName, messageText) {
     try {
           const history = getConversationHistory(phoneNumber);
           history.push({ role: 'user', content: messageText });
+          conversationHistory.set(phoneNumber, history);
+
+          // If this conversation is already handed off to a human, stay quiet —
+          // a staff member is expected to reply manually via WhatsApp Manager's inbox.
+          if (isInHandoff(phoneNumber)) {
+                console.log(`Skipping auto-reply for ${phoneNumber} — conversation is in human handoff mode.`);
+                return;
+          }
+
+          // If the customer explicitly asks for a human, hand off immediately.
+          if (isHandoffTriggered(messageText)) {
+                startHandoff(phoneNumber, `customer requested human (message: "${messageText}")`);
+                const handoffMsg = "No problem! I'm connecting you with one of our AR Tours travel specialists who will follow up with you here shortly. 🙏";
+                history.push({ role: 'assistant', content: handoffMsg });
+                conversationHistory.set(phoneNumber, history);
+                await sendWhatsAppMessage(phoneNumber, handoffMsg);
+                return;
+          }
 
       const response = await generateAIResponse(history, userName);
 
@@ -74,6 +125,12 @@ async function handleCustomerMessage(phoneNumber, userName, messageText) {
           conversationHistory.set(phoneNumber, history);
 
       await sendWhatsAppMessage(phoneNumber, response);
+
+          // If the AI itself couldn't answer (used the master-instructions fallback line),
+          // also hand off so a human follows up rather than the bot repeating itself.
+          if (response.toLowerCase().includes(FALLBACK_PHRASE)) {
+                startHandoff(phoneNumber, 'AI fallback response used (unknown answer)');
+          }
     } catch (error) {
           console.error('Error handling message:', error.message);
           await sendWhatsAppMessage(phoneNumber, 'Sorry, I had trouble processing that. Please try again.');
@@ -254,6 +311,28 @@ async function sendWhatsAppMessage(phoneNumber, messageText) {
 
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// --- Admin: view / release human handoffs ---
+// Usage: GET /admin/handoffs?secret=YOUR_WEBHOOK_SECRET
+app.get('/admin/handoffs', (req, res) => {
+    if (req.query.secret !== process.env.WEBHOOK_SECRET) return res.sendStatus(403);
+    const list = Array.from(humanHandoff.entries()).map(([phone, info]) => ({
+          phone,
+          since: new Date(info.since).toISOString(),
+          reason: info.reason
+    }));
+    res.json({ activeHandoffs: list });
+});
+
+// Usage: POST /admin/handoffs/release  { "phone": "614xxxxxxxx", "secret": "YOUR_WEBHOOK_SECRET" }
+app.post('/admin/handoffs/release', (req, res) => {
+    if (req.body.secret !== process.env.WEBHOOK_SECRET) return res.sendStatus(403);
+    const { phone } = req.body;
+    if (!phone) return res.status(400).json({ error: 'phone is required' });
+    humanHandoff.delete(phone);
+    console.log(`Handoff manually released for ${phone} — bot will resume auto-replies.`);
+    res.json({ released: phone });
 });
 
 app.listen(PORT, () => {
