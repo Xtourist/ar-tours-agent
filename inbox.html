@@ -107,7 +107,7 @@ const fmt2=(n,c='0',l=2)=>String(n).padStart(l,c);
 const fmtSize=(b)=>b<1024?b+'B':b<1024*1024?(b/1024).toFixed(1)+'KB':(b/(1024*1024)).toFixed(1)+'MB';
 
 async function loadConvos(){
-  const r=await fetch('inbox/api/conversations');if(!r.ok)return;
+  const r=await fetch('/inbox/api/conversations');if(!r.ok)return;
   allConvos=await r.json();render();
 }
 function render(){
@@ -134,7 +134,7 @@ async function openChat(phone,name){
   await loadMsgs();render();
 }
 async function loadMsgs(){
-  if(!cur)return;const r=await fetch('inbox/api/conversations/'+cur+'/messages');const ms=await r.json();
+  if(!cur)return;const r=await fetch('/inbox/api/conversations/'+cur+'/messages');const ms=await r.json();
   const box=document.getElementById('msgs');box.innerHTML='';let lastDay='';
   ms.forEach(m=>{
     const day=fmtDay(m.at);if(day!==lastDay){const s=document.createElement('div');s.className='daysep';s.innerText=day;box.appendChild(s);lastDay=day;}
@@ -143,12 +143,12 @@ async function loadMsgs(){
       m.media.forEach(med=>{
         const mb=document.createElement('div');mb.className='bubble media-bubble '+(m.dir==='inbound'?'in':'out');
         if(['image','jpeg','jpg','png'].some(t=>med.mime.includes(t))){
-          const img=document.createElement('img');img.className='media-img';img.src='inbox/api/media/'+med.id;img.alt='Image';mb.appendChild(img);
+          const img=document.createElement('img');img.className='media-img';img.src='/inbox/api/media/'+med.id;img.alt='Image';mb.appendChild(img);
         }else{
           const icon={'document':'📄','audio':'🔊','video':'🎥','file':'📎'}[med.type]||'📎';
           const mf=document.createElement('div');mf.className='media-file';
           mf.innerHTML=`<div class="media-icon">${icon}</div>
-            <div class="media-info"><div class="media-name"><a class="media-link" href="inbox/api/media/${med.id}" download="${esc(med.filename)}">${esc(med.filename)}</a></div>
+            <div class="media-info"><div class="media-name"><a class="media-link" href="/inbox/api/media/${med.id}" download="${esc(med.filename)}">${esc(med.filename)}</a></div>
             <div class="media-size">${fmtSize(med.size)}</div></div>`;
           mb.appendChild(mf);
         }
@@ -160,7 +160,7 @@ async function loadMsgs(){
       b.innerHTML=esc(m.body)+`<span class="meta">${fmtTime(m.at)}${m.dir==='outbound'?' ✓✓':''}</span>`;box.appendChild(b);
     }
   });
-  const wr=await fetch('inbox/api/conversations/'+cur+'/window').then(r=>r.json()).catch(()=>({open:true}));
+  const wr=await fetch('/inbox/api/conversations/'+cur+'/window').then(r=>r.json()).catch(()=>({open:true}));
   const pill=document.getElementById('chStatus');
   if(wr.open){pill.className='status-pill pill-open';pill.innerText='● Open';document.getElementById('warn').style.display='none';document.getElementById('input').disabled=false;}
   else{pill.className='status-pill pill-closed';pill.innerText='● 24h window closed';document.getElementById('warn').style.display='block';document.getElementById('warn').innerText='This customer hasn't messaged in 24h. WhatsApp blocks free-text replies now — an approved template is required.';}
@@ -169,7 +169,7 @@ async function loadMsgs(){
 async function send(){
   const i=document.getElementById('input');const body=i.value.trim();if(!body||!cur)return;
   const btn=document.getElementById('send');btn.disabled=true;
-  try{const r=await fetch('inbox/api/conversations/'+cur+'/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body})});
+  try{const r=await fetch('/inbox/api/conversations/'+cur+'/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body})});
     const d=await r.json();
     if(!r.ok){document.getElementById('warn').style.display='block';document.getElementById('warn').innerText=d.message||'Could not send.';}
     else{i.value='';await loadMsgs();await loadConvos();}
