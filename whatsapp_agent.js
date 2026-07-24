@@ -1,6 +1,8 @@
 const express = require('express');
 const axios = require('axios');
 require('dotenv').config();
+const path = require('path');
+const inbox = require('./inbox');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -101,6 +103,7 @@ async function handleCustomerMessage(phoneNumber, userName, messageText) {
           const history = getConversationHistory(phoneNumber);
           history.push({ role: 'user', content: messageText });
           conversationHistory.set(phoneNumber, history);
+          inbox.record(phoneNumber, userName, 'inbound', messageText);
 
           // If this conversation is already handed off to a human, stay quiet —
           // a staff member is expected to reply manually via WhatsApp Manager's inbox.
@@ -304,6 +307,7 @@ async function sendWhatsAppMessage(phoneNumber, messageText) {
             }
                 );
           console.log(`Sent to ${phoneNumber}`);
+          inbox.record(phoneNumber, null, 'outbound', messageText);
     } catch (error) {
           console.error('Error sending message:', error.response ? JSON.stringify(error.response.data) : error.message);
     }
@@ -333,6 +337,42 @@ app.post('/admin/handoffs/release', (req, res) => {
     humanHandoff.delete(phone);
     console.log(`Handoff manually released for ${phone} — bot will resume auto-replies.`);
     res.json({ released: phone });
+});
+
+
+// ===== INBOX: password-protected web UI to view/reply to customer chats =====
+function inboxAuth(req, res, next) {
+  const user = process.env.INBOX_USER || 'artours';
+  const pass = process.env.INBOX_PASS;
+  const hdr = req.headers.authorization || '';
+  const b64 = hdr.split(' ')[1] || '';
+  const [u, p] = Buffer.from(b64, 'base64').toString().split(':');
+  if (!pass) { return res.status(500).send('INBOX_PASS not set on server'); }
+  if (u === user && p === pass) return next();
+  res.set('WWW-Authenticate', 'Basic realm="AR Tours Inbox"');
+  return res.status(401).send('Authentication required');
+}
+
+app.get('/inbox', inboxAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'inbox.html'));
+});
+app.get('/inbox/api/conversations', inboxAuth, (req, res) => {
+  res.json(inbox.listConversations());
+});
+app.get('/inbox/api/conversations/:phone/messages', inboxAuth, (req, res) => {
+  res.json(inbox.getMessages(req.params.phone));
+});
+app.post('/inbox/api/conversations/:phone/reply', inboxAuth, async (req, res) => {
+  const { phone } = req.params;
+  const { body } = req.body;
+  if (!body || !body.trim()) return res.status(400).json({ error: 'empty' });
+  if (!inbox.isWindowOpen(phone)) {
+    return res.status(409).json({ error: 'window_closed', message: 'This customer has not messaged in the last 24 hours, so WhatsApp blocks free-text replies. You would need an approved template message instead.' });
+  }
+  // Sending manually implies a human is handling this chat: pause the bot for them.
+  try { startHandoff(phone, 'human replied from inbox'); } catch (e) {}
+  await sendWhatsAppMessage(phone, body);
+  res.json({ ok: true });
 });
 
 app.listen(PORT, () => {

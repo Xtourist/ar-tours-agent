@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>AR Tours Inbox</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { --green:#25D366; --dark:#111b21; --grey:#8696a0; --bg:#f0f2f5; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--bg); }
+  .layout { display:flex; height:100vh; }
+  .sidebar { width:320px; border-right:1px solid #d1d7db; background:#fff; overflow-y:auto; }
+  .sidebar h1 { font-size:16px; padding:16px; margin:0; background:var(--dark); color:#fff; }
+  .convo { padding:12px 16px; border-bottom:1px solid #f0f0f0; cursor:pointer; }
+  .convo:hover { background:#f5f6f6; }
+  .convo.active { background:#e7f8ef; }
+  .convo .name { font-weight:600; font-size:14px; }
+  .convo .preview { font-size:13px; color:var(--grey); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .convo .time { font-size:11px; color:var(--grey); float:right; }
+  .main { flex:1; display:flex; flex-direction:column; }
+  .main-header { background:var(--dark); color:#fff; padding:14px 20px; font-size:15px; }
+  .messages { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:8px; }
+  .msg { max-width:65%; padding:8px 12px; border-radius:8px; font-size:14px; line-height:1.4; white-space:pre-wrap; }
+  .msg.inbound { align-self:flex-start; background:#fff; }
+  .msg.outbound { align-self:flex-end; background:#d9fdd3; }
+  .msg .ts { display:block; font-size:10px; color:var(--grey); margin-top:4px; }
+  .composer { display:flex; padding:12px; background:#f0f2f5; gap:8px; border-top:1px solid #d1d7db; }
+  .composer input { flex:1; padding:10px 14px; border-radius:20px; border:1px solid #d1d7db; font-size:14px; }
+  .composer button { background:var(--green); color:#fff; border:none; padding:10px 18px; border-radius:20px; cursor:pointer; }
+  .composer button:disabled { background:#bbb; cursor:not-allowed; }
+  .empty { display:flex; align-items:center; justify-content:center; height:100%; color:var(--grey); }
+  .warning { background:#fff3cd; color:#7a5c00; padding:8px 20px; font-size:13px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <div class="sidebar"><h1>AR Tours &mdash; Inbox</h1><div id="convoList"></div></div>
+  <div class="main">
+    <div id="mainHeader" class="main-header" style="display:none;"></div>
+    <div id="windowWarning" class="warning" style="display:none;"></div>
+    <div id="messages" class="messages"><div class="empty">Select a conversation</div></div>
+    <div id="composer" class="composer" style="display:none;">
+      <input id="msgInput" type="text" placeholder="Type a reply..." />
+      <button id="sendBtn">Send</button>
+    </div>
+  </div>
+</div>
+<script>
+let currentPhone=null;
+async function loadConversations(){
+  const r=await fetch('inbox/api/conversations'); if(!r.ok)return;
+  const cs=await r.json(); const list=document.getElementById('convoList'); list.innerHTML='';
+  cs.forEach(c=>{const d=document.createElement('div');
+    d.className='convo'+(c.phone===currentPhone?' active':'');
+    const t=c.lastAt?new Date(c.lastAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
+    d.innerHTML=`<span class="time">${t}</span><div class="name">${esc(c.name||c.phone)}</div><div class="preview">${esc((c.preview||'').slice(0,40))}</div>`;
+    d.onclick=()=>open(c.phone,c.name); list.appendChild(d);});
+}
+async function open(phone,name){currentPhone=phone;
+  document.getElementById('mainHeader').style.display='block';
+  document.getElementById('mainHeader').textContent=name?`${name} (${phone})`:phone;
+  document.getElementById('composer').style.display='flex';
+  await loadMessages(); await loadConversations();}
+async function loadMessages(){if(!currentPhone)return;
+  const r=await fetch('inbox/api/conversations/'+currentPhone+'/messages');
+  const ms=await r.json(); const c=document.getElementById('messages'); c.innerHTML='';
+  ms.forEach(m=>{const d=document.createElement('div');
+    d.className='msg '+(m.dir==='inbound'?'inbound':'outbound');
+    d.innerHTML=esc(m.body||'')+`<span class="ts">${new Date(m.at).toLocaleString()}</span>`;
+    c.appendChild(d);}); c.scrollTop=c.scrollHeight;}
+function esc(s){const d=document.createElement('div');d.innerText=s;return d.innerHTML;}
+async function send(){const i=document.getElementById('msgInput');const b=i.value.trim();
+  if(!b||!currentPhone)return; const btn=document.getElementById('sendBtn'); btn.disabled=true;
+  document.getElementById('windowWarning').style.display='none';
+  try{const r=await fetch('inbox/api/conversations/'+currentPhone+'/reply',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({body:b})});
+    const data=await r.json();
+    if(!r.ok){document.getElementById('windowWarning').style.display='block';
+      document.getElementById('windowWarning').textContent=data.message||'Could not send.';}
+    else{i.value='';await loadMessages();}
+  }catch(e){alert('Network error');}finally{btn.disabled=false;}}
+document.getElementById('sendBtn').onclick=send;
+document.getElementById('msgInput').addEventListener('keydown',e=>{if(e.key==='Enter')send();});
+loadConversations();
+setInterval(()=>{loadConversations();if(currentPhone)loadMessages();},5000);
+</script>
+</body>
+</html>
