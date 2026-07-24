@@ -2,87 +2,157 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>AR Tours Inbox</title>
+<title>AR Tours — Team Inbox</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
-  :root { --green:#25D366; --dark:#111b21; --grey:#8696a0; --bg:#f0f2f5; }
-  * { box-sizing:border-box; }
-  body { margin:0; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--bg); }
-  .layout { display:flex; height:100vh; }
-  .sidebar { width:320px; border-right:1px solid #d1d7db; background:#fff; overflow-y:auto; }
-  .sidebar h1 { font-size:16px; padding:16px; margin:0; background:var(--dark); color:#fff; }
-  .convo { padding:12px 16px; border-bottom:1px solid #f0f0f0; cursor:pointer; }
-  .convo:hover { background:#f5f6f6; }
-  .convo.active { background:#e7f8ef; }
-  .convo .name { font-weight:600; font-size:14px; }
-  .convo .preview { font-size:13px; color:var(--grey); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .convo .time { font-size:11px; color:var(--grey); float:right; }
-  .main { flex:1; display:flex; flex-direction:column; }
-  .main-header { background:var(--dark); color:#fff; padding:14px 20px; font-size:15px; }
-  .messages { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:8px; }
-  .msg { max-width:65%; padding:8px 12px; border-radius:8px; font-size:14px; line-height:1.4; white-space:pre-wrap; }
-  .msg.inbound { align-self:flex-start; background:#fff; }
-  .msg.outbound { align-self:flex-end; background:#d9fdd3; }
-  .msg .ts { display:block; font-size:10px; color:var(--grey); margin-top:4px; }
-  .composer { display:flex; padding:12px; background:#f0f2f5; gap:8px; border-top:1px solid #d1d7db; }
-  .composer input { flex:1; padding:10px 14px; border-radius:20px; border:1px solid #d1d7db; font-size:14px; }
-  .composer button { background:var(--green); color:#fff; border:none; padding:10px 18px; border-radius:20px; cursor:pointer; }
-  .composer button:disabled { background:#bbb; cursor:not-allowed; }
-  .empty { display:flex; align-items:center; justify-content:center; height:100%; color:var(--grey); }
-  .warning { background:#fff3cd; color:#7a5c00; padding:8px 20px; font-size:13px; }
+  :root{
+    --brand:#128C7E; --brand-dark:#075E54; --green:#25D366; --accent:#34B7F1;
+    --bg:#f0f2f5; --panel:#fff; --ink:#111b21; --muted:#667781; --line:#e9edef;
+    --bubble-in:#fff; --bubble-out:#d9fdd3; --unread:#25D366;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);height:100vh;overflow:hidden}
+  .app{display:grid;grid-template-columns:340px 1fr;height:100vh}
+  /* Sidebar */
+  .side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-width:0}
+  .side-head{background:var(--brand-dark);color:#fff;padding:16px 18px;display:flex;align-items:center;gap:12px}
+  .logo{width:38px;height:38px;border-radius:50%;background:var(--green);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;color:#fff;flex-shrink:0}
+  .side-head h1{font-size:16px;font-weight:600;line-height:1.2}
+  .side-head .sub{font-size:11px;opacity:.75}
+  .search{padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .search input{width:100%;padding:9px 14px;border:none;border-radius:20px;background:var(--bg);font-size:14px;outline:none}
+  .convos{flex:1;overflow-y:auto}
+  .convo{display:flex;gap:12px;padding:12px 16px;cursor:pointer;border-bottom:1px solid #f5f6f6;align-items:center}
+  .convo:hover{background:#f5f6f6}
+  .convo.active{background:#e7f8ef}
+  .avatar{width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,var(--brand),var(--accent));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:16px;flex-shrink:0;text-transform:uppercase}
+  .convo-body{flex:1;min-width:0}
+  .convo-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .convo-name{font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .convo-time{font-size:11px;color:var(--muted);flex-shrink:0}
+  .convo-prev{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;display:flex;justify-content:space-between;gap:8px}
+  .badge{background:var(--unread);color:#fff;font-size:11px;font-weight:600;min-width:20px;height:20px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px;flex-shrink:0}
+  /* Chat */
+  .chat{display:flex;flex-direction:column;min-width:0;background:#efeae2;background-image:linear-gradient(rgba(229,221,213,.6),rgba(229,221,213,.6))}
+  .chat-head{background:var(--panel);border-bottom:1px solid var(--line);padding:10px 20px;display:flex;align-items:center;gap:12px}
+  .chat-head .avatar{width:40px;height:40px;font-size:15px}
+  .chat-head .info{flex:1;min-width:0}
+  .chat-head .n{font-weight:600;font-size:15px}
+  .chat-head .s{font-size:12px;color:var(--muted)}
+  .status-pill{font-size:11px;padding:3px 10px;border-radius:12px;font-weight:600}
+  .pill-open{background:#e7f8ef;color:var(--brand-dark)}
+  .pill-closed{background:#fde8e8;color:#b42318}
+  .msgs{flex:1;overflow-y:auto;padding:24px 8%;display:flex;flex-direction:column;gap:6px}
+  .bubble{max-width:62%;padding:8px 12px;border-radius:8px;font-size:14px;line-height:1.45;white-space:pre-wrap;word-wrap:break-word;box-shadow:0 1px .5px rgba(11,20,26,.08);position:relative}
+  .in{align-self:flex-start;background:var(--bubble-in);border-top-left-radius:0}
+  .out{align-self:flex-end;background:var(--bubble-out);border-top-right-radius:0}
+  .meta{display:block;font-size:10.5px;color:var(--muted);text-align:right;margin-top:3px}
+  .daysep{align-self:center;background:rgba(255,255,255,.85);color:var(--muted);font-size:12px;padding:4px 12px;border-radius:8px;margin:8px 0}
+  .composer{background:var(--panel);padding:10px 16px;display:flex;gap:10px;align-items:center;border-top:1px solid var(--line)}
+  .composer input{flex:1;padding:11px 16px;border:none;border-radius:22px;background:var(--bg);font-size:14px;outline:none}
+  .composer button{background:var(--green);color:#fff;border:none;width:44px;height:44px;border-radius:50%;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .composer button:disabled{background:#9fd8ba;cursor:not-allowed}
+  .empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);text-align:center;gap:8px;padding:40px}
+  .empty .big{font-size:56px}
+  .warn{background:#fff3cd;color:#7a5c00;padding:10px 8%;font-size:13px;border-top:1px solid #f0e0a8}
+  .quick{display:flex;gap:6px;padding:8px 16px 0;flex-wrap:wrap}
+  .quick button{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:5px 12px;font-size:12.5px;color:var(--brand-dark);cursor:pointer}
+  .quick button:hover{background:#e7f8ef}
+  @media(max-width:720px){.app{grid-template-columns:1fr}.chat{display:none}.app.show-chat .side{display:none}.app.show-chat .chat{display:flex}}
 </style>
 </head>
 <body>
-<div class="layout">
-  <div class="sidebar"><h1>AR Tours &mdash; Inbox</h1><div id="convoList"></div></div>
-  <div class="main">
-    <div id="mainHeader" class="main-header" style="display:none;"></div>
-    <div id="windowWarning" class="warning" style="display:none;"></div>
-    <div id="messages" class="messages"><div class="empty">Select a conversation</div></div>
-    <div id="composer" class="composer" style="display:none;">
-      <input id="msgInput" type="text" placeholder="Type a reply..." />
-      <button id="sendBtn">Send</button>
+<div class="app" id="app">
+  <aside class="side">
+    <div class="side-head">
+      <div class="logo">AR</div>
+      <div><h1>AR Tours</h1><div class="sub">Team Inbox</div></div>
     </div>
-  </div>
+    <div class="search"><input id="search" placeholder="Search chats..." /></div>
+    <div class="convos" id="convos"></div>
+  </aside>
+  <main class="chat">
+    <div id="chatHead" class="chat-head" style="display:none">
+      <div class="avatar" id="chAvatar"></div>
+      <div class="info"><div class="n" id="chName"></div><div class="s" id="chPhone"></div></div>
+      <span class="status-pill" id="chStatus"></span>
+    </div>
+    <div class="msgs" id="msgs"><div class="empty"><div class="big">💬</div><div><b>AR Tours Team Inbox</b></div><div>Select a conversation to start replying.</div></div></div>
+    <div id="warn" class="warn" style="display:none"></div>
+    <div class="quick" id="quick" style="display:none">
+      <button data-q="Thanks for reaching out to AR Tours! How can we help with your trip? 😊">👋 Greeting</button>
+      <button data-q="Could you share your travel dates, number of travellers, and pickup location so we can prepare a quote?">📋 Ask details</button>
+      <button data-q="Thank you! Our team will prepare the best options and confirm shortly. 🙏">✅ Wrap up</button>
+    </div>
+    <div id="composer" class="composer" style="display:none">
+      <input id="input" placeholder="Type a message..." />
+      <button id="send">➤</button>
+    </div>
+  </main>
 </div>
 <script>
-let currentPhone=null;
-async function loadConversations(){
-  const r=await fetch('inbox/api/conversations'); if(!r.ok)return;
-  const cs=await r.json(); const list=document.getElementById('convoList'); list.innerHTML='';
-  cs.forEach(c=>{const d=document.createElement('div');
-    d.className='convo'+(c.phone===currentPhone?' active':'');
-    const t=c.lastAt?new Date(c.lastAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
-    d.innerHTML=`<span class="time">${t}</span><div class="name">${esc(c.name||c.phone)}</div><div class="preview">${esc((c.preview||'').slice(0,40))}</div>`;
-    d.onclick=()=>open(c.phone,c.name); list.appendChild(d);});
+let cur=null, allConvos=[], seen={};
+const initials=n=>{if(!n)return'?';const p=n.trim().split(/\s+/);return (p[0][0]+(p[1]?p[1][0]:'')).toUpperCase();};
+const esc=s=>{const d=document.createElement('div');d.innerText=s||'';return d.innerHTML;};
+const fmtTime=t=>t?new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
+const fmtDay=t=>{const d=new Date(t),n=new Date();if(d.toDateString()===n.toDateString())return'Today';const y=new Date(n);y.setDate(n.getDate()-1);if(d.toDateString()===y.toDateString())return'Yesterday';return d.toLocaleDateString([], {day:'numeric',month:'short',year:'numeric'});};
+
+async function loadConvos(){
+  const r=await fetch('inbox/api/conversations');if(!r.ok)return;
+  allConvos=await r.json();render();
 }
-async function open(phone,name){currentPhone=phone;
-  document.getElementById('mainHeader').style.display='block';
-  document.getElementById('mainHeader').textContent=name?`${name} (${phone})`:phone;
+function render(){
+  const q=(document.getElementById('search').value||'').toLowerCase();
+  const list=document.getElementById('convos');list.innerHTML='';
+  allConvos.filter(c=>!q||(c.name||'').toLowerCase().includes(q)||c.phone.includes(q)).forEach(c=>{
+    const unread=seen[c.phone]!==c.lastAt && c.phone!==cur;
+    const d=document.createElement('div');d.className='convo'+(c.phone===cur?' active':'');
+    d.innerHTML=`<div class="avatar">${esc(initials(c.name||c.phone))}</div>
+      <div class="convo-body"><div class="convo-top"><span class="convo-name">${esc(c.name||c.phone)}</span><span class="convo-time">${fmtTime(c.lastAt)}</span></div>
+      <div class="convo-prev"><span>${esc((c.preview||'').slice(0,42))}</span>${unread?'<span class="badge">●</span>':''}</div></div>`;
+    d.onclick=()=>openChat(c.phone,c.name);list.appendChild(d);
+  });
+}
+async function openChat(phone,name){
+  cur=phone;const c=allConvos.find(x=>x.phone===phone);if(c)seen[phone]=c.lastAt;
+  document.getElementById('app').classList.add('show-chat');
+  document.getElementById('chatHead').style.display='flex';
   document.getElementById('composer').style.display='flex';
-  await loadMessages(); await loadConversations();}
-async function loadMessages(){if(!currentPhone)return;
-  const r=await fetch('inbox/api/conversations/'+currentPhone+'/messages');
-  const ms=await r.json(); const c=document.getElementById('messages'); c.innerHTML='';
-  ms.forEach(m=>{const d=document.createElement('div');
-    d.className='msg '+(m.dir==='inbound'?'inbound':'outbound');
-    d.innerHTML=esc(m.body||'')+`<span class="ts">${new Date(m.at).toLocaleString()}</span>`;
-    c.appendChild(d);}); c.scrollTop=c.scrollHeight;}
-function esc(s){const d=document.createElement('div');d.innerText=s;return d.innerHTML;}
-async function send(){const i=document.getElementById('msgInput');const b=i.value.trim();
-  if(!b||!currentPhone)return; const btn=document.getElementById('sendBtn'); btn.disabled=true;
-  document.getElementById('windowWarning').style.display='none';
-  try{const r=await fetch('inbox/api/conversations/'+currentPhone+'/reply',{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify({body:b})});
-    const data=await r.json();
-    if(!r.ok){document.getElementById('windowWarning').style.display='block';
-      document.getElementById('windowWarning').textContent=data.message||'Could not send.';}
-    else{i.value='';await loadMessages();}
-  }catch(e){alert('Network error');}finally{btn.disabled=false;}}
-document.getElementById('sendBtn').onclick=send;
-document.getElementById('msgInput').addEventListener('keydown',e=>{if(e.key==='Enter')send();});
-loadConversations();
-setInterval(()=>{loadConversations();if(currentPhone)loadMessages();},5000);
+  document.getElementById('quick').style.display='flex';
+  document.getElementById('chAvatar').innerText=initials(name||phone);
+  document.getElementById('chName').innerText=name||phone;
+  document.getElementById('chPhone').innerText='+'+phone;
+  await loadMsgs();render();
+}
+async function loadMsgs(){
+  if(!cur)return;const r=await fetch('inbox/api/conversations/'+cur+'/messages');const ms=await r.json();
+  const box=document.getElementById('msgs');box.innerHTML='';let lastDay='';
+  ms.forEach(m=>{
+    const day=fmtDay(m.at);if(day!==lastDay){const s=document.createElement('div');s.className='daysep';s.innerText=day;box.appendChild(s);lastDay=day;}
+    const b=document.createElement('div');b.className='bubble '+(m.dir==='inbound'?'in':'out');
+    b.innerHTML=esc(m.body)+`<span class="meta">${fmtTime(m.at)}${m.dir==='outbound'?' ✓✓':''}</span>`;box.appendChild(b);
+  });
+  // window status
+  const wr=await fetch('inbox/api/conversations/'+cur+'/window').then(r=>r.json()).catch(()=>({open:true}));
+  const pill=document.getElementById('chStatus');
+  if(wr.open){pill.className='status-pill pill-open';pill.innerText='● Open';document.getElementById('warn').style.display='none';document.getElementById('input').disabled=false;}
+  else{pill.className='status-pill pill-closed';pill.innerText='● 24h window closed';document.getElementById('warn').style.display='block';document.getElementById('warn').innerText='This customer hasn’t messaged in 24h. WhatsApp blocks free-text replies now — an approved template is required.';}
+  box.scrollTop=box.scrollHeight;
+}
+async function send(){
+  const i=document.getElementById('input');const body=i.value.trim();if(!body||!cur)return;
+  const btn=document.getElementById('send');btn.disabled=true;
+  try{const r=await fetch('inbox/api/conversations/'+cur+'/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body})});
+    const d=await r.json();
+    if(!r.ok){document.getElementById('warn').style.display='block';document.getElementById('warn').innerText=d.message||'Could not send.';}
+    else{i.value='';await loadMsgs();await loadConvos();}
+  }catch(e){alert('Network error');}finally{btn.disabled=false;i.focus();}
+}
+document.getElementById('send').onclick=send;
+document.getElementById('input').addEventListener('keydown',e=>{if(e.key==='Enter')send();});
+document.getElementById('search').addEventListener('input',render);
+document.querySelectorAll('.quick button').forEach(b=>b.onclick=()=>{document.getElementById('input').value=b.dataset.q;document.getElementById('input').focus();});
+loadConvos();setInterval(()=>{loadConvos();if(cur)loadMsgs();},5000);
 </script>
 </body>
 </html>

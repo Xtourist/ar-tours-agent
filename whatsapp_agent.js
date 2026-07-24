@@ -362,6 +362,9 @@ app.get('/inbox/api/conversations', inboxAuth, (req, res) => {
 app.get('/inbox/api/conversations/:phone/messages', inboxAuth, (req, res) => {
   res.json(inbox.getMessages(req.params.phone));
 });
+app.get('/inbox/api/conversations/:phone/window', inboxAuth, (req, res) => {
+  res.json({ open: inbox.isWindowOpen(req.params.phone) });
+});
 app.post('/inbox/api/conversations/:phone/reply', inboxAuth, async (req, res) => {
   const { phone } = req.params;
   const { body } = req.body;
