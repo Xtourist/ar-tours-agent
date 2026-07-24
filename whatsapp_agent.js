@@ -1,8 +1,10 @@
 const express = require('express');
 const axios = require('axios');
+const fs = require('fs');
 require('dotenv').config();
 const path = require('path');
 const inbox = require('./inbox');
+const { downloadMedia, getMediaPath } = require('./media');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -79,16 +81,20 @@ app.post('/webhook', async (req, res) => {
                 const contacts = value.contacts;
 
                 for (const msg of value.messages) {
+                            const phoneNumber = msg.from;
+                            const userName = contacts && contacts[0] && contacts[0].profile
+                              ? contacts[0].profile.name
+                                                : 'Guest';
+                            const msgId = msg.id;
+
                             if (msg.type === 'text') {
-                                          const phoneNumber = msg.from;
-                                          const userName = contacts && contacts[0] && contacts[0].profile
-                                            ? contacts[0].profile.name
-                                                          : 'Guest';
-                                          const messageText = msg.text.body;
-
+                              const messageText = msg.text.body;
                               console.log(`Message from ${userName} (${phoneNumber}): ${messageText}`);
-
                               await handleCustomerMessage(phoneNumber, userName, messageText);
+                            } else if (['image', 'document', 'audio', 'video', 'file'].includes(msg.type)) {
+                              const media = msg[msg.type];
+                              console.log(`Media from ${userName} (${phoneNumber}): type=${msg.type}, id=${media.id}`);
+                              await handleMediaMessage(phoneNumber, userName, msgId, msg.type, media);
                             }
                 }
             }
@@ -97,6 +103,36 @@ app.post('/webhook', async (req, res) => {
           console.error('Webhook error:', error.message);
     }
 });
+
+
+async function handleMediaMessage(phoneNumber, userName, msgId, mediaType, mediaObj) {
+    try {
+      // Log the media in the inbox
+      const caption = mediaObj.caption || `[${mediaType.toUpperCase()}]`;
+      inbox.record(phoneNumber, userName, 'inbound', caption);
+      
+      // Try to download and cache the media
+      try {
+        const mediaInfo = await downloadMedia(mediaObj.id, mediaType, process.env.WHATSAPP_ACCESS_TOKEN);
+        inbox.recordMedia(phoneNumber, msgId, mediaInfo);
+        console.log(`Cached ${mediaType} for ${phoneNumber}: ${mediaInfo.filename}`);
+      } catch (dlErr) {
+        console.warn(`Could not download ${mediaType} for ${phoneNumber}:`, dlErr.message);
+        // Still log it in inbox even if download failed
+      }
+
+      // Acknowledge to customer (optional)
+      if (mediaType === 'image') {
+        await sendWhatsAppMessage(phoneNumber, '📸 Got your photo! Our team will review and get back to you shortly.');
+      } else if (mediaType === 'document') {
+        await sendWhatsAppMessage(phoneNumber, '📄 Received your document! We will review it and follow up soon.');
+      } else {
+        await sendWhatsAppMessage(phoneNumber, `✓ Received your ${mediaType}. Thanks for sharing!`);
+      }
+    } catch (error) {
+      console.error('Error handling media:', error.message);
+    }
+}
 
 async function handleCustomerMessage(phoneNumber, userName, messageText) {
     try {
@@ -312,6 +348,21 @@ async function sendWhatsAppMessage(phoneNumber, messageText) {
           console.error('Error sending message:', error.response ? JSON.stringify(error.response.data) : error.message);
     }
 }
+
+
+app.get('/inbox/api/media/:mediaId', inboxAuth, (req, res) => {
+  try {
+    const path = getMediaPath(req.params.mediaId);
+    if (!fs.existsSync(path)) {
+      return res.status(404).json({ error: 'Media not found' });
+    }
+    const mime = require('./media').getMediaMime(req.params.mediaId);
+    res.type(mime);
+    res.sendFile(path);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });

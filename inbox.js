@@ -80,3 +80,23 @@ function isWindowOpen(phone) {
 load();
 
 module.exports = { record, listConversations, getMessages, isWindowOpen };
+
+// Media storage: keep track of downloaded media files mapped to messages
+const mediaStore = new Map();
+
+function recordMedia(phone, messageId, mediaInfo) {
+  if (!mediaStore.has(phone)) mediaStore.set(phone, []);
+  mediaStore.get(phone).push({ messageId, ...mediaInfo, recordedAt: new Date().toISOString() });
+  // Keep only last 100 media per conversation to limit memory
+  const convos = mediaStore.get(phone);
+  if (convos.length > 100) convos.shift();
+}
+
+function getMediaForMessage(phone, messageId) {
+  const media = mediaStore.get(phone) || [];
+  return media.filter(m => m.messageId === messageId);
+}
+
+// Export media functions
+module.exports.recordMedia = recordMedia;
+module.exports.getMediaForMessage = getMediaForMessage;
