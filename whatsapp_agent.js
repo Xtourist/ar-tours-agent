@@ -444,6 +444,60 @@ console.error('Error sending message:', error.response ? JSON.stringify(error.re
 }
 }
 
+// Send a Meta-approved template message to start a NEW conversation (cold
+// outreach). WhatsApp only allows free-text replies within 24h of the
+// customer messaging first — to message someone who hasn't messaged you,
+// the first message must use an approved template, submitted and approved
+// in Meta's WhatsApp Manager beforehand.
+//
+// bodyParams is an ordered array of strings filling the template's {{1}},
+// {{2}}, etc. placeholders, in order.
+async function sendWhatsAppTemplate(phoneNumber, templateName, languageCode, bodyParams = []) {
+const components = bodyParams.length
+? [{ type: 'body', parameters: bodyParams.map(p => ({ type: 'text', text: String(p) })) }]
+: [];
+await axios.post(
+`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`,
+{
+messaging_product: 'whatsapp',
+to: phoneNumber,
+type: 'template',
+template: {
+name: templateName,
+language: { code: languageCode || 'en' },
+components
+}
+},
+{
+headers: {
+'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+'Content-Type': 'application/json'
+}
+}
+);
+console.log(`Template "${templateName}" sent to ${phoneNumber}`);
+// Record a readable version in the inbox so it shows in the chat history
+// like any other outbound message.
+const readable = bodyParams.length ? `[Template: ${templateName}] ${bodyParams.join(' / ')}` : `[Template: ${templateName}]`;
+inbox.record(phoneNumber, null, 'outbound', readable);
+}
+
+// Start a new conversation with a phone number that hasn't messaged us yet.
+// Usage from the inbox "New message" button.
+app.post('/inbox/api/send-template', inboxAuth, async (req, res) => {
+const { phone, name, template, language, params } = req.body;
+if (!phone || !template) return res.status(400).json({ error: 'phone and template are required' });
+try {
+await sendWhatsAppTemplate(phone, template, language, Array.isArray(params) ? params : []);
+if (name) inbox.record(phone, name, 'outbound', `[Template: ${template}]`);
+res.json({ ok: true });
+} catch (error) {
+const details = error.response ? error.response.data : { message: error.message };
+console.error('Template send error:', JSON.stringify(details));
+res.status(502).json({ error: 'send_failed', message: details.error ? details.error.message : 'Could not send template. Check the template name is approved in Meta WhatsApp Manager.', details });
+}
+});
+
 app.get('/inbox/api/media/:mediaId', inboxAuth, (req, res) => {
 try {
 const path = getMediaPath(req.params.mediaId);
@@ -554,7 +608,26 @@ app.get('/inbox', inboxAuth, (req, res) => {
 res.sendFile(path.join(__dirname, 'inbox.html'));
 });
 app.get('/inbox/api/conversations', inboxAuth, (req, res) => {
-res.json(inbox.listConversations());
+const list = inbox.listConversations();
+// Attach needsHuman flag + latest matched Bokun booking (tour/date/pax) so
+// the mobile inbox can show a tour tag on each row and sort handed-off /
+// unanswered chats to the top, without a round trip per conversation.
+const withStatus = list.map(c => {
+const bookings = bokun.getBookingsForPhone(c.phone);
+const latest = bookings && bookings[0];
+return {
+...c,
+needsHuman: isInHandoff(c.phone),
+tour: latest ? { tourName: latest.tourName, date: latest.date, pax: latest.pax, status: latest.status } : null
+};
+});
+res.json(withStatus);
+});
+// Lightweight endpoint just for handoff status (used to refresh needsHuman
+// flags on poll without re-fetching full conversation list every time).
+app.get('/inbox/api/handoff-status', inboxAuth, (req, res) => {
+const list = Array.from(humanHandoff.keys());
+res.json({ phones: list });
 });
 app.get('/inbox/api/conversations/:phone/messages', inboxAuth, (req, res) => {
 res.json(inbox.getMessages(req.params.phone));
