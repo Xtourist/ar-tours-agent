@@ -246,7 +246,7 @@ return;
 // If the customer explicitly asks for a human, hand off immediately.
 if (isHandoffTriggered(messageText)) {
 startHandoff(phoneNumber, 'customer requested human', { name: userName, lastMessage: messageText });
-const handoffMsg = "No problem! I'm connecting you with one of our AR Tours travel specialists who will follow up with you here shortly. 🙏";
+const handoffMsg = "No problem! I've passed this on to one of our AR Tours travel specialists, who will follow up with you here shortly. 🙏\n\nIf it's urgent, you can also reach us directly:\n📧 human@theartours.com\n📞 +61 400 044 004";
 history.push({ role: 'assistant', content: handoffMsg });
 conversationHistory.set(phoneNumber, history);
 await sendWhatsAppMessage(phoneNumber, handoffMsg);
