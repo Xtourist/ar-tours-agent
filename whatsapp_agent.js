@@ -485,14 +485,67 @@ res.json({ released: phone });
 });
 
 // ===== INBOX: password-protected web UI to view/reply to customer chats =====
+// Cookie-based session so the browser stays logged in (Basic Auth prompts
+// again every time the browser/tab is closed, which is what made this
+// annoying). Session token is a simple HMAC of user+expiry, verified with
+// INBOX_PASS as the signing secret, valid for 30 days.
+const crypto = require('crypto');
+const SESSION_COOKIE = 'ar_inbox_session';
+const SESSION_DAYS = 30;
+
+function makeSessionToken(user) {
+const pass = process.env.INBOX_PASS || '';
+const expires = Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000;
+const payload = `${user}.${expires}`;
+const sig = crypto.createHmac('sha256', pass).update(payload).digest('hex');
+return `${payload}.${sig}`;
+}
+
+function verifySessionToken(token) {
+if (!token) return false;
+const pass = process.env.INBOX_PASS || '';
+const parts = token.split('.');
+if (parts.length !== 3) return false;
+const [user, expires, sig] = parts;
+const payload = `${user}.${expires}`;
+const expected = crypto.createHmac('sha256', pass).update(payload).digest('hex');
+if (sig.length !== expected.length) return false;
+if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return false;
+if (Date.now() > Number(expires)) return false;
+return true;
+}
+
+function parseCookies(req) {
+const header = req.headers.cookie || '';
+const out = {};
+header.split(';').forEach(pair => {
+const idx = pair.indexOf('=');
+if (idx === -1) return;
+const k = pair.slice(0, idx).trim();
+const v = pair.slice(idx + 1).trim();
+if (k) out[k] = decodeURIComponent(v);
+});
+return out;
+}
+
 function inboxAuth(req, res, next) {
 const user = process.env.INBOX_USER || 'artours';
 const pass = process.env.INBOX_PASS;
+if (!pass) { return res.status(500).send('INBOX_PASS not set on server'); }
+
+// 1. Valid session cookie? Let them through, no re-login needed.
+const cookies = parseCookies(req);
+if (verifySessionToken(cookies[SESSION_COOKIE])) return next();
+
+// 2. Fall back to Basic Auth (still works, e.g. for API/curl use), and on
+// success set the session cookie so the browser won't be asked again.
 const hdr = req.headers.authorization || '';
 const b64 = hdr.split(' ')[1] || '';
 const [u, p] = Buffer.from(b64, 'base64').toString().split(':');
-if (!pass) { return res.status(500).send('INBOX_PASS not set on server'); }
-if (u === user && p === pass) return next();
+if (u === user && p === pass) {
+res.set('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(makeSessionToken(user))}; Max-Age=${SESSION_DAYS * 24 * 60 * 60}; HttpOnly; SameSite=Lax; Path=/`);
+return next();
+}
 res.set('WWW-Authenticate', 'Basic realm="AR Tours Inbox"');
 return res.status(401).send('Authentication required');
 }
