@@ -1,5 +1,12 @@
 // Media handling for WhatsApp inbox
-// Downloads media from Meta's API and caches it locally
+// Downloads media from Meta's WhatsApp Cloud API and caches it locally.
+//
+// Fix (2026-07-25): this previously called graph.instagram.com with
+// Instagram-specific fields (media_product_stream), which is the wrong API
+// for WhatsApp media and always failed with a 400 error. WhatsApp Cloud API
+// media downloads are a two-step process on graph.facebook.com:
+//   1. GET /{media-id} -> returns a short-lived "url" field for the file
+//   2. GET that url (with the same access token) -> the actual file bytes
 
 const axios = require('axios');
 const path = require('path');
@@ -7,6 +14,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 
 const MEDIA_CACHE_DIR = process.env.MEDIA_CACHE_DIR || path.join(__dirname, 'media-cache');
+const GRAPH_API_VERSION = process.env.WHATSAPP_GRAPH_VERSION || 'v18.0';
 
 // Ensure cache directory exists
 if (!fs.existsSync(MEDIA_CACHE_DIR)) {
@@ -24,16 +32,20 @@ const MEDIA_TYPES = {
 
 async function downloadMedia(mediaObjectId, mediaType, accessToken) {
   try {
-    // Get media URL from Meta API
+    // Step 1: look up the media's real (short-lived) download URL via the
+    // WhatsApp Cloud API — NOT the Instagram Graph API.
     const urlResp = await axios.get(
-      `https://graph.instagram.com/v25.0/${mediaObjectId}`,
-      { params: { fields: 'media_product_stream,file_name,file_size', access_token: accessToken } }
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${mediaObjectId}`,
+      {
+        headers: { 'Authorization': `Bearer ${accessToken}` },
+        params: { fields: 'url,mime_type,file_size' }
+      }
     );
 
-    const mediaUrl = urlResp.data.media_product_stream || urlResp.data.url;
-    if (!mediaUrl) throw new Error('No media URL in response');
+    const mediaUrl = urlResp.data.url;
+    if (!mediaUrl) throw new Error('No media URL in response from WhatsApp API');
 
-    // Download the actual file
+    // Step 2: download the actual file bytes from that URL, same access token.
     const mediaResp = await axios.get(mediaUrl, {
       headers: { 'Authorization': `Bearer ${accessToken}` },
       responseType: 'arraybuffer',
@@ -45,16 +57,17 @@ async function downloadMedia(mediaObjectId, mediaType, accessToken) {
     const filepath = path.join(MEDIA_CACHE_DIR, filename);
 
     fs.writeFileSync(filepath, mediaResp.data);
-    
+
     return {
       id: filename,
       type: mediaType,
       size: mediaResp.data.length,
-      mime: MEDIA_TYPES[mediaType]?.mime || 'application/octet-stream',
-      filename: urlResp.data.file_name || `media${ext}`
+      mime: urlResp.data.mime_type || MEDIA_TYPES[mediaType]?.mime || 'application/octet-stream',
+      filename: `media${ext}`
     };
   } catch (error) {
-    console.error('Media download error:', error.message);
+    const details = error.response ? JSON.stringify(error.response.data) : error.message;
+    console.error('Media download error:', details);
     throw error;
   }
 }
