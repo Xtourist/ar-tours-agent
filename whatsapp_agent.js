@@ -4,6 +4,7 @@ const fs = require('fs');
 require('dotenv').config();
 const path = require('path');
 const inbox = require('./inbox');
+const { sendHandoffAlert } = require('./alert');
 const { downloadMedia, getMediaPath } = require('./media');
 
 const app = express();
@@ -42,9 +43,17 @@ function isInHandoff(phoneNumber) {
   return true;
 }
 
-function startHandoff(phoneNumber, reason) {
+function startHandoff(phoneNumber, reason, context = {}) {
   humanHandoff.set(phoneNumber, { since: Date.now(), reason });
   console.log(`HANDOFF STARTED for ${phoneNumber} — reason: ${reason}. Bot will pause auto-replies; reply manually from WhatsApp Manager inbox.`);
+  if (!context.silent) {
+    sendHandoffAlert({
+      phone: phoneNumber,
+      name: context.name,
+      reason,
+      lastMessage: context.lastMessage || ''
+    }).catch(err => console.error('sendHandoffAlert error:', err.message));
+  }
 }
 
 // Webhook GET verification
@@ -150,7 +159,7 @@ async function handleCustomerMessage(phoneNumber, userName, messageText) {
 
           // If the customer explicitly asks for a human, hand off immediately.
           if (isHandoffTriggered(messageText)) {
-                startHandoff(phoneNumber, `customer requested human (message: "${messageText}")`);
+                startHandoff(phoneNumber, 'customer requested human', { name: userName, lastMessage: messageText });
                 const handoffMsg = "No problem! I'm connecting you with one of our AR Tours travel specialists who will follow up with you here shortly. 🙏";
                 history.push({ role: 'assistant', content: handoffMsg });
                 conversationHistory.set(phoneNumber, history);
@@ -168,7 +177,7 @@ async function handleCustomerMessage(phoneNumber, userName, messageText) {
           // If the AI itself couldn't answer (used the master-instructions fallback line),
           // also hand off so a human follows up rather than the bot repeating itself.
           if (response.toLowerCase().includes(FALLBACK_PHRASE)) {
-                startHandoff(phoneNumber, 'AI fallback response used (unknown answer)');
+                startHandoff(phoneNumber, 'AI could not answer the question', { name: userName, lastMessage: messageText });
           }
     } catch (error) {
           console.error('Error handling message:', error.message);
@@ -424,7 +433,7 @@ app.post('/inbox/api/conversations/:phone/reply', inboxAuth, async (req, res) =>
     return res.status(409).json({ error: 'window_closed', message: 'This customer has not messaged in the last 24 hours, so WhatsApp blocks free-text replies. You would need an approved template message instead.' });
   }
   // Sending manually implies a human is handling this chat: pause the bot for them.
-  try { startHandoff(phone, 'human replied from inbox'); } catch (e) {}
+  try { startHandoff(phone, 'human replied from inbox', { silent: true }); } catch (e) {}
   await sendWhatsAppMessage(phone, body);
   res.json({ ok: true });
 });
