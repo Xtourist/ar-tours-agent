@@ -6,6 +6,7 @@ const path = require('path');
 const inbox = require('./inbox');
 const bokun = require('./bokun');
 const { sendHandoffAlert } = require('./alert');
+const { sendLeadWebhook } = require('./leadWebhook');
 const { downloadMedia, getMediaPath } = require('./media');
 
 const app = express();
@@ -60,6 +61,16 @@ name: context.name,
 reason,
 lastMessage: context.lastMessage || ''
 }).catch(err => console.error('sendHandoffAlert error:', err.message));
+
+// alert.js uses Gmail SMTP, which Render's free tier blocks outbound —
+// this webhook path uses plain HTTPS instead (not blocked) and also logs
+// the lead to the Google Sheet, so it works without any paid upgrade.
+sendLeadWebhook({
+phone: phoneNumber,
+name: context.name,
+reason,
+lastMessage: context.lastMessage || ''
+}).catch(err => console.error('sendLeadWebhook error:', err.message));
 }
 }
 
