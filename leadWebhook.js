@@ -14,7 +14,7 @@
 
 const axios = require('axios');
 
-async function sendLeadWebhook({ phone, name, reason, lastMessage }) {
+async function sendLeadWebhook({ phone, name, reason, lastMessage, transcript }) {
   const url = process.env.APPS_SCRIPT_WEBHOOK_URL;
   const secret = process.env.APPS_SCRIPT_SECRET;
 
@@ -30,6 +30,7 @@ async function sendLeadWebhook({ phone, name, reason, lastMessage }) {
       name: name || '',
       reason: reason || '',
       lastMessage: lastMessage || '',
+      transcript: transcript || '',
     }, {
       timeout: 10000,
       // Apps Script issues a redirect (302) from /exec to the real

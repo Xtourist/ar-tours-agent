@@ -51,15 +51,34 @@ return false;
 return true;
 }
 
+// Build a readable transcript of the last N messages for this phone number,
+// so the handoff email/Sheet row includes conversation context instead of
+// just the single triggering message.
+function buildTranscript(phoneNumber, limit = 20) {
+try {
+const messages = inbox.getMessages(phoneNumber) || [];
+const recent = messages.slice(-limit);
+return recent
+.map(m => `${m.dir === 'inbound' ? 'Customer' : 'Bot'} (${new Date(m.at).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne' })}): ${m.body}`)
+.join('\n');
+} catch (e) {
+console.warn('Could not build transcript for', phoneNumber, e.message);
+return '';
+}
+}
+
 function startHandoff(phoneNumber, reason, context = {}) {
 humanHandoff.set(phoneNumber, { since: Date.now(), reason });
 console.log(`HANDOFF STARTED for ${phoneNumber} — reason: ${reason}. Bot will pause auto-replies; reply manually from WhatsApp Manager inbox.`);
 if (!context.silent) {
+const transcript = buildTranscript(phoneNumber);
+
 sendHandoffAlert({
 phone: phoneNumber,
 name: context.name,
 reason,
-lastMessage: context.lastMessage || ''
+lastMessage: context.lastMessage || '',
+transcript
 }).catch(err => console.error('sendHandoffAlert error:', err.message));
 
 // alert.js uses Gmail SMTP, which Render's free tier blocks outbound —
@@ -69,7 +88,8 @@ sendLeadWebhook({
 phone: phoneNumber,
 name: context.name,
 reason,
-lastMessage: context.lastMessage || ''
+lastMessage: context.lastMessage || '',
+transcript
 }).catch(err => console.error('sendLeadWebhook error:', err.message));
 }
 }
