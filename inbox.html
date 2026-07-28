@@ -150,6 +150,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 <input id="nmPhone" placeholder="61491234567" style="width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:8px;margin:4px 0 12px;font-size:15px">
 <label style="font-size:12px;font-weight:600;color:var(--muted)">Customer name (for inbox record)</label>
 <input id="nmName" placeholder="Sarah" style="width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:8px;margin:4px 0 12px;font-size:15px">
+<label style="font-size:12px;font-weight:600;color:var(--muted)">Send from</label>
+<select id="nmFrom" style="width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:8px;margin:4px 0 12px;font-size:15px">
+<option value="main">+61 400 044 004 (main)</option>
+<option value="second">+61 400 040 243</option>
+</select>
 <label style="font-size:12px;font-weight:600;color:var(--muted)">Template</label>
 <select id="nmTemplate" style="width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:8px;margin:4px 0 12px;font-size:15px">
 <option value="inquiry_followup">inquiry_followup — "Hi {{1}}, following up on your {{2}} interest..."</option>
@@ -328,13 +333,14 @@ document.getElementById('nmSend').onclick=async()=>{
 const phone=document.getElementById('nmPhone').value.trim().replace(/[^0-9]/g,'');
 const name=document.getElementById('nmName').value.trim();
 const template=document.getElementById('nmTemplate').value;
+const from=document.getElementById('nmFrom').value;
 const v1=document.getElementById('nmVar1').value.trim();
 const v2=document.getElementById('nmVar2').value.trim();
 const warn=document.getElementById('nmWarn');
 if(!phone){warn.style.display='block';warn.innerText='Enter a phone number.';return;}
 const btn=document.getElementById('nmSend');btn.disabled=true;btn.innerText='Sending...';
 try{
-const r=await fetch('/inbox/api/send-template',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,name,template,language:'en',params:[v1,v2]})});
+const r=await fetch('/inbox/api/send-template',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,name,template,language:'en',params:[v1,v2],from})});
 const d=await r.json();
 if(!r.ok){warn.style.display='block';warn.innerText=d.message||'Could not send. Check the template is approved in Meta WhatsApp Manager.';}
 else{nmModal.style.display='none';await loadConvos();openChat(phone,name||phone);}

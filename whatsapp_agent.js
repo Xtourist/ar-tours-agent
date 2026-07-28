@@ -126,6 +126,13 @@ const value = change.value;
 if (!value || !value.messages) continue;
 
 const contacts = value.contacts;
+// Multi-number support: this is the ID of the business number that
+// actually received the message (main +61400044004 or the new
+// +61400040243). We route the reply back out through the same number
+// instead of always using a single hardcoded env var.
+const businessNumberId = value.metadata && value.metadata.phone_number_id
+? value.metadata.phone_number_id
+: process.env.PHONE_NUMBER_ID;
 
 for (const msg of value.messages) {
 const phoneNumber = msg.from;
@@ -134,14 +141,19 @@ const userName = contacts && contacts[0] && contacts[0].profile
 : 'Guest';
 const msgId = msg.id;
 
+// Remember which business number this conversation belongs to, so manual
+// replies from /inbox and future auto-replies use the right sender even
+// outside this webhook call.
+inbox.setBusinessNumber(phoneNumber, businessNumberId);
+
 if (msg.type === 'text') {
 const messageText = msg.text.body;
-console.log(`Message from ${userName} (${phoneNumber}): ${messageText}`);
-await handleCustomerMessage(phoneNumber, userName, messageText);
+console.log(`Message from ${userName} (${phoneNumber}) via ${businessNumberId}: ${messageText}`);
+await handleCustomerMessage(phoneNumber, userName, messageText, businessNumberId);
 } else if (['image', 'document', 'audio', 'video', 'file'].includes(msg.type)) {
 const media = msg[msg.type];
-console.log(`Media from ${userName} (${phoneNumber}): type=${msg.type}, id=${media.id}`);
-await handleMediaMessage(phoneNumber, userName, msgId, msg.type, media);
+console.log(`Media from ${userName} (${phoneNumber}) via ${businessNumberId}: type=${msg.type}, id=${media.id}`);
+await handleMediaMessage(phoneNumber, userName, msgId, msg.type, media, businessNumberId);
 }
 }
 }
@@ -200,7 +212,7 @@ app.get('/inbox/api/conversations/:phone/bokun-bookings', inboxAuth, (req, res) 
 res.json(bokun.getBookingsForPhone(req.params.phone));
 });
 
-async function handleMediaMessage(phoneNumber, userName, msgId, mediaType, mediaObj) {
+async function handleMediaMessage(phoneNumber, userName, msgId, mediaType, mediaObj, businessNumberId) {
 try {
 // Log the media in the inbox
 const caption = mediaObj.caption || `[${mediaType.toUpperCase()}]`;
@@ -218,18 +230,18 @@ console.warn(`Could not download ${mediaType} for ${phoneNumber}:`, dlErr.messag
 
 // Acknowledge to customer (optional)
 if (mediaType === 'image') {
-await sendWhatsAppMessage(phoneNumber, '📸 Got your photo! Our team will review and get back to you shortly.');
+await sendWhatsAppMessage(phoneNumber, '📸 Got your photo! Our team will review and get back to you shortly.', businessNumberId);
 } else if (mediaType === 'document') {
-await sendWhatsAppMessage(phoneNumber, '📄 Received your document! We will review it and follow up soon.');
+await sendWhatsAppMessage(phoneNumber, '📄 Received your document! We will review it and follow up soon.', businessNumberId);
 } else {
-await sendWhatsAppMessage(phoneNumber, `✓ Received your ${mediaType}. Thanks for sharing!`);
+await sendWhatsAppMessage(phoneNumber, `✓ Received your ${mediaType}. Thanks for sharing!`, businessNumberId);
 }
 } catch (error) {
 console.error('Error handling media:', error.message);
 }
 }
 
-async function handleCustomerMessage(phoneNumber, userName, messageText) {
+async function handleCustomerMessage(phoneNumber, userName, messageText, businessNumberId) {
 try {
 const history = getConversationHistory(phoneNumber);
 history.push({ role: 'user', content: messageText });
@@ -249,7 +261,7 @@ startHandoff(phoneNumber, 'customer requested human', { name: userName, lastMess
 const handoffMsg = "No problem! I've passed this on to one of our AR Tours travel specialists, who will follow up with you here shortly. 🙏\n\nIf it's urgent, you can also reach us directly:\n📧 human@theartours.com\n📞 +61 400 044 004";
 history.push({ role: 'assistant', content: handoffMsg });
 conversationHistory.set(phoneNumber, history);
-await sendWhatsAppMessage(phoneNumber, handoffMsg);
+await sendWhatsAppMessage(phoneNumber, handoffMsg, businessNumberId);
 return;
 }
 
@@ -258,7 +270,7 @@ const response = await generateAIResponse(history, userName);
 history.push({ role: 'assistant', content: response });
 conversationHistory.set(phoneNumber, history);
 
-await sendWhatsAppMessage(phoneNumber, response);
+await sendWhatsAppMessage(phoneNumber, response, businessNumberId);
 
 // If the AI itself couldn't answer (used the master-instructions fallback line),
 // also hand off so a human follows up rather than the bot repeating itself.
@@ -267,7 +279,7 @@ startHandoff(phoneNumber, 'AI could not answer the question', { name: userName, 
 }
 } catch (error) {
 console.error('Error handling message:', error.message);
-await sendWhatsAppMessage(phoneNumber, 'Sorry, I had trouble processing that. Please try again.');
+await sendWhatsAppMessage(phoneNumber, 'Sorry, I had trouble processing that. Please try again.', businessNumberId);
 }
 }
 
@@ -420,10 +432,15 @@ conversationHistory.set(phoneNumber, history);
 return history;
 }
 
-async function sendWhatsAppMessage(phoneNumber, messageText) {
+// fromNumberId lets us send from whichever business number (+61400044004 or
+// the new +61400040243) actually owns this conversation. Falls back to the
+// main number's env var if none is known yet (e.g. very first outbound send
+// before any inbound message has been recorded for this phone).
+async function sendWhatsAppMessage(phoneNumber, messageText, fromNumberId) {
+const senderId = fromNumberId || inbox.getBusinessNumber(phoneNumber) || process.env.PHONE_NUMBER_ID;
 try {
 await axios.post(
-`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`,
+`https://graph.facebook.com/v18.0/${senderId}/messages`,
 {
 messaging_product: 'whatsapp',
 to: phoneNumber,
@@ -437,7 +454,7 @@ headers: {
 }
 }
 );
-console.log(`Sent to ${phoneNumber}`);
+console.log(`Sent to ${phoneNumber} from ${senderId}`);
 inbox.record(phoneNumber, null, 'outbound', messageText);
 } catch (error) {
 console.error('Error sending message:', error.response ? JSON.stringify(error.response.data) : error.message);
@@ -452,12 +469,13 @@ console.error('Error sending message:', error.response ? JSON.stringify(error.re
 //
 // bodyParams is an ordered array of strings filling the template's {{1}},
 // {{2}}, etc. placeholders, in order.
-async function sendWhatsAppTemplate(phoneNumber, templateName, languageCode, bodyParams = []) {
+async function sendWhatsAppTemplate(phoneNumber, templateName, languageCode, bodyParams = [], fromNumberId) {
+const senderId = fromNumberId || process.env.PHONE_NUMBER_ID;
 const components = bodyParams.length
 ? [{ type: 'body', parameters: bodyParams.map(p => ({ type: 'text', text: String(p) })) }]
 : [];
 await axios.post(
-`https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`,
+`https://graph.facebook.com/v18.0/${senderId}/messages`,
 {
 messaging_product: 'whatsapp',
 to: phoneNumber,
@@ -475,7 +493,7 @@ headers: {
 }
 }
 );
-console.log(`Template "${templateName}" sent to ${phoneNumber}`);
+console.log(`Template "${templateName}" sent to ${phoneNumber} from ${senderId}`);
 // Record a readable version in the inbox so it shows in the chat history
 // like any other outbound message.
 const readable = bodyParams.length ? `[Template: ${templateName}] ${bodyParams.join(' / ')}` : `[Template: ${templateName}]`;
@@ -485,10 +503,17 @@ inbox.record(phoneNumber, null, 'outbound', readable);
 // Start a new conversation with a phone number that hasn't messaged us yet.
 // Usage from the inbox "New message" button.
 app.post('/inbox/api/send-template', inboxAuth, async (req, res) => {
-const { phone, name, template, language, params } = req.body;
+const { phone, name, template, language, params, from } = req.body;
 if (!phone || !template) return res.status(400).json({ error: 'phone and template are required' });
 try {
-await sendWhatsAppTemplate(phone, template, language, Array.isArray(params) ? params : []);
+// "from" lets the New Message modal choose which business number to send
+// from (main +61400044004 or +61400040243). Defaults to the main number.
+const fromNumberId = from === 'second' ? process.env.SECOND_PHONE_NUMBER_ID : process.env.PHONE_NUMBER_ID;
+if (from === 'second' && !fromNumberId) {
+return res.status(400).json({ error: 'not_configured', message: 'SECOND_PHONE_NUMBER_ID is not set on the server yet.' });
+}
+await sendWhatsAppTemplate(phone, template, language, Array.isArray(params) ? params : [], fromNumberId);
+if (from === 'second') inbox.setBusinessNumber(phone, fromNumberId);
 if (name) inbox.record(phone, name, 'outbound', `[Template: ${template}]`);
 res.json({ ok: true });
 } catch (error) {

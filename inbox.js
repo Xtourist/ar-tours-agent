@@ -14,7 +14,7 @@ const DATA_PATH = process.env.INBOX_DATA_PATH || path.join(__dirname, 'inbox-dat
 // that would be unnecessary work while there's only one operator.
 const OPERATOR_ID = process.env.OPERATOR_ID || 'ar_tours';
 
-let store = { conversations: {} }; // { [phone]: { name, lastAt, operatorId, messages: [{dir, body, at}] } }
+let store = { conversations: {} }; // { [phone]: { name, lastAt, operatorId, businessNumberId, messages: [{dir, body, at}] } }
 
 function load() {
 try {
@@ -64,6 +64,7 @@ phone,
 name: c.name,
 lastAt: c.lastAt,
 preview: c.messages.length ? c.messages[c.messages.length - 1].body : '',
+businessNumberId: c.businessNumberId || null,
 }))
 .sort((a, b) => (b.lastAt || '').localeCompare(a.lastAt || ''));
 }
@@ -85,9 +86,27 @@ return diffH <= 24;
 return false;
 }
 
+// Multi-number support: remember which business phone number (Cloud API
+// phone_number_id) a conversation belongs to, so replies from /inbox and
+// future auto-replies go out from the same number the customer messaged —
+// instead of always defaulting to the main number.
+function setBusinessNumber(phone, businessNumberId) {
+if (!businessNumberId) return;
+if (!store.conversations[phone]) {
+store.conversations[phone] = { name: phone, lastAt: null, operatorId: OPERATOR_ID, messages: [] };
+}
+store.conversations[phone].businessNumberId = businessNumberId;
+save();
+}
+
+function getBusinessNumber(phone) {
+const c = store.conversations[phone];
+return c ? c.businessNumberId || null : null;
+}
+
 load();
 
-module.exports = { record, listConversations, getMessages, isWindowOpen, OPERATOR_ID };
+module.exports = { record, listConversations, getMessages, isWindowOpen, setBusinessNumber, getBusinessNumber, OPERATOR_ID };
 
 // Media storage: keep track of downloaded media files mapped to messages
 const mediaStore = new Map();
