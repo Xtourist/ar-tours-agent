@@ -523,31 +523,6 @@ res.status(502).json({ error: 'send_failed', message: details.error ? details.er
 }
 });
 
-// One-time admin action: register a phone number with the Cloud API (needed
-// once per new number before it can send/receive — separate from adding it
-// in WhatsApp Manager). Protected by REGISTER_ADMIN_SECRET (set this env var
-// to any value you choose before calling). Usage:
-//   POST /admin/register-number { phoneNumberId, pin, secret }
-app.post('/admin/register-number', async (req, res) => {
-if (!process.env.REGISTER_ADMIN_SECRET || req.body.secret !== process.env.REGISTER_ADMIN_SECRET) {
-return res.sendStatus(403);
-}
-const { phoneNumberId, pin } = req.body;
-if (!phoneNumberId || !pin) return res.status(400).json({ error: 'phoneNumberId and pin are required' });
-try {
-const result = await axios.post(
-`https://graph.facebook.com/v18.0/${phoneNumberId}/register`,
-{ messaging_product: 'whatsapp', pin: String(pin) },
-{ headers: { 'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } }
-);
-res.json({ ok: true, result: result.data });
-} catch (error) {
-const details = error.response ? error.response.data : { message: error.message };
-console.error('Register number error:', JSON.stringify(details));
-res.status(502).json({ error: 'register_failed', details });
-}
-});
-
 app.get('/inbox/api/media/:mediaId', inboxAuth, (req, res) => {
 try {
 const path = getMediaPath(req.params.mediaId);
