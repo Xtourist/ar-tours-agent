@@ -172,7 +172,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 </div>
 
 <script>
-let cur=null, allConvos=[], seen={};
+let cur=null, allConvos=[];
+// "seen" tracks the lastAt timestamp we've already viewed per conversation, so
+// unread dots persist across page reloads (previously this was in-memory only,
+// so refreshing /inbox made every already-read chat look unread again).
+let seen={};
+try{seen=JSON.parse(localStorage.getItem('ar_inbox_seen')||'{}');}catch(e){seen={};}
+function saveSeen(){try{localStorage.setItem('ar_inbox_seen',JSON.stringify(seen));}catch(e){}}
 const initials=n=>{if(!n)return'?';const p=n.trim().split(/\s+/);return (p[0][0]+(p[1]?p[1][0]:'')).toUpperCase();};
 const esc=s=>{const d=document.createElement('div');d.innerText=s||'';return d.innerHTML;};
 const fmtTime=t=>t?new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
@@ -181,7 +187,12 @@ const fmtSize=(b)=>b<1024?b+'B':b<1024*1024?(b/1024).toFixed(1)+'KB':(b/(1024*10
 
 async function loadConvos(){
 const r=await fetch('/inbox/api/conversations');if(!r.ok)return;
-allConvos=await r.json();render();
+allConvos=await r.json();
+// If the currently-open chat got a new message via this poll, mark it seen
+// immediately (you're actively looking at it) instead of waiting for the
+// next click, which previously left it flagged unread while open.
+if(cur){const c=allConvos.find(x=>x.phone===cur);if(c && seen[cur]!==c.lastAt){seen[cur]=c.lastAt;saveSeen();}}
+render();
 }
 
 function render(){
@@ -227,7 +238,7 @@ const empty=document.createElement('div');empty.style.padding='30px 16px';empty.
 }
 
 async function openChat(phone,name){
-cur=phone;const c=allConvos.find(x=>x.phone===phone);if(c)seen[phone]=c.lastAt;
+cur=phone;const c=allConvos.find(x=>x.phone===phone);if(c){seen[phone]=c.lastAt;saveSeen();}
 document.getElementById('app').classList.add('show-chat');
 document.getElementById('chatHead').style.display='flex';
 document.getElementById('composer').style.display='flex';
