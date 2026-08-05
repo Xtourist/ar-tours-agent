@@ -3,109 +3,153 @@
 <head>
 <meta charset="UTF-8" />
 <title>AR Tours — Inbox</title>
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#075E54" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="AR Tours" />
+<link rel="manifest" href="/inbox/manifest.json" />
+<link rel="apple-touch-icon" href="/inbox/icon-192.png" />
 <style>
 :root{
 --brand:#128C7E; --brand-dark:#075E54; --green:#25D366; --accent:#34B7F1;
---bg:#f0f2f5; --panel:#fff; --ink:#111b21; --muted:#667781; --line:#e9edef;
---bubble-in:#fff; --bubble-out:#d9fdd3; --alert:#e0442b; --alert-bg:#fdeceb;
+--bg:#f7f8fa; --panel:#fff; --ink:#0b1720; --muted:#65788a; --line:#e7ebef;
+--bubble-in:#fff; --bubble-out:#dcfce0; --alert:#e0442b; --alert-bg:#fdeceb;
+--shadow:0 1px 3px rgba(11,23,32,.06),0 1px 2px rgba(11,23,32,.08);
+--shadow-md:0 4px 14px rgba(11,23,32,.10);
+--radius:14px;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);overscroll-behavior:none}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);overscroll-behavior:none;-webkit-font-smoothing:antialiased}
+button{font-family:inherit}
 
-/* ===== App shell: mobile-first single pane, desktop gets a 2nd column ===== */
+/* ===== App shell ===== */
 .app{display:flex;height:100vh;height:100dvh}
 .side{background:var(--panel);display:flex;flex-direction:column;width:100%;min-width:0}
-.chat{display:none;flex-direction:column;min-width:0;background:#efeae2;background-image:linear-gradient(rgba(229,221,213,.6),rgba(229,221,213,.6));width:100%}
+.chat{display:none;flex-direction:column;min-width:0;background:#eef1f4;width:100%}
 .app.show-chat .side{display:none}
 .app.show-chat .chat{display:flex}
 
 @media(min-width:860px){
-.app{display:grid;grid-template-columns:380px 1fr}
+.app{display:grid;grid-template-columns:390px 1fr}
 .side{display:flex !important;border-right:1px solid var(--line)}
 .chat{display:flex !important}
 .app.show-chat .side{display:flex !important}
 }
 
-/* ===== Sidebar / conversation list ===== */
-.side-head{background:var(--brand-dark);color:#fff;padding:14px 16px;display:flex;align-items:center;gap:12px;flex-shrink:0}
-.logo{width:36px;height:36px;border-radius:50%;background:var(--green);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff;flex-shrink:0}
-.side-head h1{font-size:15px;font-weight:600;line-height:1.2}
-.side-head .sub{font-size:11px;opacity:.75}
-.search{padding:8px 10px;background:var(--panel);border-bottom:1px solid var(--line);flex-shrink:0}
-.search input{width:100%;padding:10px 14px;border:none;border-radius:20px;background:var(--bg);font-size:15px;outline:none}
-.section-label{padding:10px 16px 4px;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+/* ===== Sidebar ===== */
+.side-head{background:linear-gradient(135deg,var(--brand-dark),#0a3f39);color:#fff;padding:16px 18px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+.logo{width:38px;height:38px;border-radius:11px;background:var(--green);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#fff;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,.2)}
+.side-head h1{font-size:16px;font-weight:700;line-height:1.2;letter-spacing:-.01em}
+.side-head .sub{font-size:11.5px;opacity:.7}
+.icon-btn{background:rgba(255,255,255,.14);border:none;color:#fff;width:36px;height:36px;border-radius:50%;font-size:19px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:background .15s}
+.icon-btn:active{background:rgba(255,255,255,.28)}
+.search{padding:10px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex-shrink:0}
+.search input{width:100%;padding:10px 14px 10px 38px;border:none;border-radius:20px;background:var(--bg);font-size:15px;outline:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2365788a' stroke-width='2'%3E%3Ccircle cx='7' cy='7' r='5.5'/%3E%3Cpath d='M11 11L15 15' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:12px center}
+.section-label{padding:12px 18px 6px;font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .convos{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
-.convo{display:flex;gap:12px;padding:13px 16px;cursor:pointer;border-bottom:1px solid #f5f6f6;align-items:center}
-.convo:active{background:#eceeef}
-.convo.active{background:#e7f8ef}
-.convo.needs-human{background:#fff8f7}
-.convo.needs-human.active{background:#e7f8ef}
-.avatar{width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,var(--brand),var(--accent));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:16px;flex-shrink:0;text-transform:uppercase;position:relative}
-.avatar .dot{position:absolute;bottom:0;right:0;width:14px;height:14px;border-radius:50%;background:var(--alert);border:2px solid var(--panel)}
+.convo{display:flex;gap:12px;padding:12px 16px;cursor:pointer;align-items:center;transition:background .1s;position:relative}
+.convo:active{background:#eef1f3}
+.convo.active{background:#e5f6ec}
+.convo.needs-human{background:#fffaf9}
+.convo.needs-human.active{background:#e5f6ec}
+.avatar{width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,var(--brand),var(--accent));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;flex-shrink:0;text-transform:uppercase;position:relative}
+.avatar .dot{position:absolute;bottom:-1px;right:-1px;width:15px;height:15px;border-radius:50%;background:var(--alert);border:2.5px solid var(--panel)}
 .convo-body{flex:1;min-width:0}
 .convo-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .convo-name{font-weight:600;font-size:15.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .convo-time{font-size:11.5px;color:var(--muted);flex-shrink:0}
-.convo-prev{font-size:13.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px;display:flex;justify-content:space-between;gap:8px;align-items:center}
-.tags{display:flex;gap:5px;margin-top:5px;flex-wrap:wrap}
-.tag{font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;white-space:nowrap}
+.convo-prev{font-size:13.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.unread-dot{width:9px;height:9px;border-radius:50%;background:var(--green);flex-shrink:0}
+.tags{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap}
+.tag{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;letter-spacing:.01em}
 .tag-tour{background:#e7f3fb;color:#0a6ea8}
 .tag-human{background:var(--alert-bg);color:var(--alert)}
 
 /* ===== Chat header ===== */
-.chat-head{background:var(--panel);border-bottom:1px solid var(--line);padding:10px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0}
+.chat-head{background:var(--panel);border-bottom:1px solid var(--line);padding:10px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0;box-shadow:var(--shadow)}
 .back-btn{display:flex;background:none;border:none;font-size:22px;color:var(--brand-dark);cursor:pointer;padding:4px 6px 4px 0;flex-shrink:0}
 @media(min-width:860px){.back-btn{display:none}}
 .chat-head .avatar{width:40px;height:40px;font-size:15px}
 .chat-head .info{flex:1;min-width:0}
-.chat-head .n{font-weight:600;font-size:15px}
+.chat-head .n{font-weight:700;font-size:15px}
 .chat-head .s{font-size:12px;color:var(--muted)}
-.status-pill{font-size:11px;padding:4px 10px;border-radius:12px;font-weight:600;white-space:nowrap}
-.pill-open{background:#e7f8ef;color:var(--brand-dark)}
+.status-pill{font-size:11px;padding:5px 11px;border-radius:20px;font-weight:700;white-space:nowrap}
+.pill-open{background:#e5f6ec;color:#0a7a41}
 .pill-closed{background:#fde8e8;color:#b42318}
 .pill-human{background:var(--alert-bg);color:var(--alert)}
+.handled-btn{font-size:11.5px;font-weight:700;padding:6px 12px;border-radius:20px;border:none;background:var(--brand-dark);color:#fff;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.handled-btn:active{opacity:.8}
 
 /* ===== Bokun booking card ===== */
-.bokun-card{margin:10px 8% 0;background:#fff;border-radius:10px;padding:12px 14px;box-shadow:0 1px 2px rgba(11,20,26,.12);border-left:4px solid var(--accent)}
-.bokun-card .bt{font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px}
-.bokun-card .bn{font-weight:600;font-size:14.5px}
+.bokun-card{margin:10px 6% 0;background:#fff;border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow-md);border-left:4px solid var(--accent)}
+@media(min-width:860px){.bokun-card{margin:14px 8% 0}}
+.bokun-card .bt{font-size:11px;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
+.bokun-card .bn{font-weight:700;font-size:15px}
 .bokun-card .bd{font-size:13px;color:var(--muted);margin-top:3px}
-.bokun-card .bstatus{display:inline-block;margin-top:6px;font-size:11px;font-weight:600;padding:2px 9px;border-radius:10px;background:#e7f3fb;color:#0a6ea8}
+.bokun-card .bstatus{display:inline-block;margin-top:7px;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;background:#e7f3fb;color:#0a6ea8}
 
 /* ===== Messages ===== */
-.msgs{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 4% 8px;display:flex;flex-direction:column;gap:6px}
+.msgs{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 4% 8px;display:flex;flex-direction:column;gap:6px;background-image:radial-gradient(circle at 1px 1px, rgba(11,23,32,.035) 1px, transparent 0);background-size:22px 22px}
 @media(min-width:860px){.msgs{padding:24px 8%}}
-.bubble{max-width:80%;padding:8px 12px;border-radius:8px;font-size:14.5px;line-height:1.45;white-space:pre-wrap;word-wrap:break-word;box-shadow:0 1px .5px rgba(11,20,26,.08);position:relative}
+.bubble{max-width:82%;padding:9px 13px;border-radius:16px;font-size:14.5px;line-height:1.45;white-space:pre-wrap;word-wrap:break-word;box-shadow:var(--shadow);position:relative;animation:pop .18s ease-out}
+@keyframes pop{from{opacity:0;transform:translateY(4px) scale(.98)}to{opacity:1;transform:none}}
 @media(min-width:860px){.bubble{max-width:62%}}
-.in{align-self:flex-start;background:var(--bubble-in);border-top-left-radius:0}
-.out{align-self:flex-end;background:var(--bubble-out);border-top-right-radius:0}
-.meta{display:block;font-size:10.5px;color:var(--muted);text-align:right;margin-top:3px}
-.daysep{align-self:center;background:rgba(255,255,255,.85);color:var(--muted);font-size:12px;padding:4px 12px;border-radius:8px;margin:8px 0}
-.media-bubble{max-width:75%;border-radius:8px;overflow:hidden}
+.in{align-self:flex-start;background:var(--bubble-in);border-bottom-left-radius:4px}
+.out{align-self:flex-end;background:var(--bubble-out);border-bottom-right-radius:4px}
+.meta{display:block;font-size:10.5px;color:var(--muted);text-align:right;margin-top:4px}
+.daysep{align-self:center;background:rgba(255,255,255,.9);color:var(--muted);font-size:11.5px;font-weight:600;padding:5px 14px;border-radius:20px;margin:10px 0;box-shadow:var(--shadow)}
+.media-bubble{max-width:78%;border-radius:16px;overflow:hidden}
 @media(min-width:860px){.media-bubble{max-width:300px}}
 .media-img{width:100%;height:auto;display:block}
-.media-file{display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(0,0,0,.05);border-radius:6px;margin:4px 0}
-.media-icon{font-size:20px}
+.media-file{display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(0,0,0,.045);border-radius:10px;margin:4px 0}
+.media-icon{font-size:22px}
 .media-info{flex:1;min-width:0}
-.media-name{font-size:12px;font-weight:600;word-break:break-word}
-.media-size{font-size:10px;color:var(--muted);margin-top:2px}
+.media-name{font-size:12.5px;font-weight:600;word-break:break-word}
+.media-size{font-size:10.5px;color:var(--muted);margin-top:2px}
 .media-link{color:var(--brand);text-decoration:none;font-weight:600;cursor:pointer}
 .media-link:hover{text-decoration:underline}
 
-/* ===== Quick actions + composer (big thumb targets) ===== */
-.quick{display:flex;gap:6px;padding:8px 10px 0;flex-wrap:wrap;flex-shrink:0}
-.quick button{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:8px 14px;font-size:13px;color:var(--brand-dark);cursor:pointer;white-space:nowrap}
-.quick button:active{background:#e7f8ef}
+/* ===== Quick actions + composer ===== */
+.quick{display:flex;gap:6px;padding:8px 10px 0;flex-wrap:wrap;flex-shrink:0;overflow-x:auto}
+.quick button{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:8px 14px;font-size:12.5px;color:var(--brand-dark);cursor:pointer;white-space:nowrap;font-weight:600;transition:background .1s}
+.quick button:active{background:#e5f6ec}
 .composer{background:var(--panel);padding:10px 10px calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px;align-items:center;border-top:1px solid var(--line);flex-shrink:0}
 .composer input{flex:1;padding:13px 16px;border:none;border-radius:24px;background:var(--bg);font-size:16px;outline:none;min-width:0}
-.composer button{background:var(--green);color:#fff;border:none;width:48px;height:48px;border-radius:50%;cursor:pointer;font-size:19px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.composer button:disabled{background:#9fd8ba;cursor:not-allowed}
+.composer button{background:var(--green);color:#fff;border:none;width:48px;height:48px;border-radius:50%;cursor:pointer;font-size:19px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 8px rgba(37,211,102,.4);transition:transform .1s}
+.composer button:active{transform:scale(.92)}
+.composer button:disabled{background:#b9e7c9;cursor:not-allowed;box-shadow:none}
 
-.empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);text-align:center;gap:8px;padding:40px}
-.empty .big{font-size:56px}
+.empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);text-align:center;gap:6px;padding:40px}
+.empty .big{font-size:52px;margin-bottom:6px}
 .warn{background:#fff3cd;color:#7a5c00;padding:10px 6%;font-size:13px;border-top:1px solid #f0e0a8;flex-shrink:0}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1a2530;color:#fff;padding:11px 20px;border-radius:24px;font-size:13.5px;font-weight:600;box-shadow:0 6px 20px rgba(0,0,0,.25);z-index:100;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
+
+/* Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(11,23,32,.5);z-index:50;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(2px)}
+.modal-overlay.show{display:flex}
+.modal{background:#fff;border-radius:18px;padding:22px;width:100%;max-width:400px;max-height:90vh;overflow-y:auto;box-shadow:0 16px 40px rgba(0,0,0,.25)}
+.modal h2{font-size:17px;font-weight:700;margin-bottom:4px}
+.modal .desc{font-size:12.5px;color:var(--muted);margin-bottom:16px;line-height:1.4}
+.field-label{font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:5px}
+.field{width:100%;padding:12px 14px;border:1.5px solid var(--line);border-radius:10px;margin-bottom:14px;font-size:15px;outline:none;transition:border-color .15s}
+.field:focus{border-color:var(--brand)}
+.modal-actions{display:flex;gap:10px;margin-top:6px}
+.btn-secondary{flex:1;padding:12px;border-radius:24px;border:1.5px solid var(--line);background:#fff;font-size:14.5px;font-weight:600;cursor:pointer}
+.btn-primary{flex:1;padding:12px;border-radius:24px;border:none;background:var(--green);color:#fff;font-size:14.5px;font-weight:700;cursor:pointer;box-shadow:0 3px 10px rgba(37,211,102,.35)}
+.btn-primary:disabled{opacity:.6;box-shadow:none}
+.alert-box{display:none;background:var(--alert-bg);color:var(--alert);font-size:13px;padding:9px 11px;border-radius:10px;margin-bottom:14px;font-weight:500}
+
+/* Install prompt banner */
+.install-banner{display:none;align-items:center;gap:10px;background:linear-gradient(135deg,var(--brand-dark),#0a3f39);color:#fff;padding:12px 16px;flex-shrink:0}
+.install-banner.show{display:flex}
+.install-banner .txt{flex:1;font-size:13px;font-weight:600}
+.install-banner .txt small{display:block;font-weight:400;opacity:.75;font-size:11.5px;margin-top:1px}
+.install-banner button{background:var(--green);color:#fff;border:none;padding:8px 14px;border-radius:16px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+.install-banner .dismiss{background:none;color:#fff;opacity:.7;font-size:20px;padding:0 4px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -114,7 +158,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 <div class="side-head">
 <div class="logo">AR</div>
 <div style="flex:1"><h1>AR Tours</h1><div class="sub">Inbox</div></div>
-<button id="newMsgBtn" title="Message a new customer" style="background:rgba(255,255,255,.15);border:none;color:#fff;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer;flex-shrink:0">+</button>
+<button class="icon-btn" id="bellBtn" title="Notifications">🔔</button>
+<button class="icon-btn" id="newMsgBtn" title="Message a new customer">+</button>
+</div>
+<div class="install-banner" id="installBanner">
+<div class="txt">Install AR Tours Inbox<small>Add to your home screen for quick access + notifications</small></div>
+<button id="installBtn">Install</button>
+<button class="dismiss" id="installDismiss">×</button>
 </div>
 <div class="search"><input id="search" placeholder="Search chats..." /></div>
 <div class="convos" id="convos"></div>
@@ -124,6 +174,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 <button class="back-btn" id="backBtn">←</button>
 <div class="avatar" id="chAvatar"></div>
 <div class="info"><div class="n" id="chName"></div><div class="s" id="chPhone"></div></div>
+<button class="handled-btn" id="handledBtn" style="display:none">✓ Handled</button>
 <span class="status-pill" id="chStatus"></span>
 </div>
 <div id="bokunCard"></div>
@@ -141,41 +192,52 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Ar
 </main>
 </div>
 
-<!-- New message modal: cold outreach via approved WhatsApp template -->
-<div id="newMsgModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;align-items:center;justify-content:center;padding:16px">
-<div style="background:#fff;border-radius:14px;padding:20px;width:100%;max-width:400px;max-height:90vh;overflow-y:auto">
-<div style="font-weight:700;font-size:16px;margin-bottom:4px">New message</div>
-<div style="font-size:12.5px;color:var(--muted);margin-bottom:14px">To message someone who hasn't texted you yet, WhatsApp requires an approved template — free text isn't allowed for a first contact.</div>
-<label style="font-size:12px;font-weight:600;color:var(--muted)">Phone (with country code, no +)</label>
-<input id="nmPhone" placeholder="61491234567" style="width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:8px;margin:4px 0 12px;font-size:15px">
-<label style="font-size:12px;font-weight:600;color:var(--muted)">Customer name (for inbox record)</label>
-<input id="nmName" placeholder="Sarah" style="width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:8px;margin:4px 0 12px;font-size:15px">
-<label style="font-size:12px;font-weight:600;color:var(--muted)">Send from</label>
-<select id="nmFrom" style="width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:8px;margin:4px 0 12px;font-size:15px">
+<div class="toast" id="toast"></div>
+
+<!-- New message modal -->
+<div id="newMsgModal" class="modal-overlay">
+<div class="modal">
+<h2>New message</h2>
+<div class="desc">To message someone who hasn't texted you yet, WhatsApp requires an approved template — free text isn't allowed for a first contact.</div>
+<label class="field-label">Phone (with country code, no +)</label>
+<input id="nmPhone" class="field" placeholder="61491234567">
+<label class="field-label">Customer name (for inbox record)</label>
+<input id="nmName" class="field" placeholder="Sarah">
+<label class="field-label">Send from</label>
+<select id="nmFrom" class="field">
 <option value="main">+61 400 044 004 (main)</option>
 <option value="second">+61 400 040 243</option>
 </select>
-<label style="font-size:12px;font-weight:600;color:var(--muted)">Template</label>
-<select id="nmTemplate" style="width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:8px;margin:4px 0 12px;font-size:15px">
+<label class="field-label">Template</label>
+<select id="nmTemplate" class="field">
 <option value="inquiry_followup">inquiry_followup — "Hi {{1}}, following up on your {{2}} interest..."</option>
 </select>
-<label style="font-size:12px;font-weight:600;color:var(--muted)">{{1}} First name</label>
-<input id="nmVar1" placeholder="Sarah" style="width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:8px;margin:4px 0 12px;font-size:15px">
-<label style="font-size:12px;font-weight:600;color:var(--muted)">{{2}} Tour name</label>
-<input id="nmVar2" placeholder="Great Ocean Road" style="width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:8px;margin:4px 0 16px;font-size:15px">
-<div id="nmWarn" style="display:none;background:#fdeceb;color:#e0442b;font-size:13px;padding:8px 10px;border-radius:8px;margin-bottom:12px"></div>
-<div style="display:flex;gap:10px">
-<button id="nmCancel" style="flex:1;padding:12px;border-radius:24px;border:1px solid var(--line);background:#fff;font-size:14.5px;cursor:pointer">Cancel</button>
-<button id="nmSend" style="flex:1;padding:12px;border-radius:24px;border:none;background:var(--green);color:#fff;font-size:14.5px;font-weight:600;cursor:pointer">Send</button>
+<label class="field-label">{{1}} First name</label>
+<input id="nmVar1" class="field" placeholder="Sarah">
+<label class="field-label">{{2}} Tour name</label>
+<input id="nmVar2" class="field" placeholder="Great Ocean Road" style="margin-bottom:4px">
+<div id="nmWarn" class="alert-box"></div>
+<div class="modal-actions">
+<button id="nmCancel" class="btn-secondary">Cancel</button>
+<button id="nmSend" class="btn-primary">Send</button>
+</div>
+</div>
+</div>
+
+<!-- Notifications modal -->
+<div id="bellModal" class="modal-overlay">
+<div class="modal">
+<h2>Push notifications</h2>
+<div class="desc" id="bellDesc">Get notified the moment a customer messages you, even when the inbox isn't open.</div>
+<div class="modal-actions">
+<button id="bellCancel" class="btn-secondary">Close</button>
+<button id="bellToggle" class="btn-primary">Enable</button>
 </div>
 </div>
 </div>
 
 <script>
 let cur=null, allConvos=[];
-// "seen" tracks the lastAt timestamp we've already viewed per conversation, so
-// unread dots persist across page reloads (previously this was in-memory only,
-// so refreshing /inbox made every already-read chat look unread again).
 let seen={};
 try{seen=JSON.parse(localStorage.getItem('ar_inbox_seen')||'{}');}catch(e){seen={};}
 function saveSeen(){try{localStorage.setItem('ar_inbox_seen',JSON.stringify(seen));}catch(e){}}
@@ -185,12 +247,14 @@ const fmtTime=t=>t?new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-d
 const fmtDay=t=>{const d=new Date(t),n=new Date();if(d.toDateString()===n.toDateString())return'Today';const y=new Date(n);y.setDate(n.getDate()-1);if(d.toDateString()===y.toDateString())return'Yesterday';return d.toLocaleDateString([], {day:'numeric',month:'short',year:'numeric'});};
 const fmtSize=(b)=>b<1024?b+'B':b<1024*1024?(b/1024).toFixed(1)+'KB':(b/(1024*1024)).toFixed(1)+'MB';
 
+function toast(msg){
+const t=document.getElementById('toast');t.innerText=msg;t.classList.add('show');
+clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2600);
+}
+
 async function loadConvos(){
 const r=await fetch('/inbox/api/conversations');if(!r.ok)return;
 allConvos=await r.json();
-// If the currently-open chat got a new message via this poll, mark it seen
-// immediately (you're actively looking at it) instead of waiting for the
-// next click, which previously left it flagged unread while open.
 if(cur){const c=allConvos.find(x=>x.phone===cur);if(c && seen[cur]!==c.lastAt){seen[cur]=c.lastAt;saveSeen();}}
 render();
 }
@@ -200,7 +264,6 @@ const q=(document.getElementById('search').value||'').toLowerCase();
 const list=document.getElementById('convos');list.innerHTML='';
 
 let filtered=allConvos.filter(c=>!q||(c.name||'').toLowerCase().includes(q)||c.phone.includes(q));
-// Needs-human / unreplied first, then most recent.
 filtered.sort((a,b)=>{
 if((!!b.needsHuman) - (!!a.needsHuman)!==0) return (b.needsHuman?1:0)-(a.needsHuman?1:0);
 return (b.lastAt||'').localeCompare(a.lastAt||'');
@@ -218,7 +281,7 @@ if(c.needsHuman) tags+='<span class="tag tag-human">🙋 Needs you</span>';
 if(c.tour && c.tour.tourName) tags+=`<span class="tag tag-tour">${esc(c.tour.tourName.slice(0,22))}${c.tour.pax?' · '+c.tour.pax+'p':''}</span>`;
 d.innerHTML=`<div class="avatar">${esc(initials(c.name||c.phone))}${c.needsHuman?'<span class="dot"></span>':''}</div>
 <div class="convo-body"><div class="convo-top"><span class="convo-name">${esc(c.name||c.phone)}</span><span class="convo-time">${fmtTime(c.lastAt)}</span></div>
-<div class="convo-prev"><span>${esc((c.preview||'').slice(0,40))}</span>${unread?'<span class="tag tag-human" style="padding:2px 7px">●</span>':''}</div>
+<div class="convo-prev"><span>${esc((c.preview||'').slice(0,40))}</span>${unread?'<span class="unread-dot"></span>':''}</div>
 ${tags?`<div class="tags">${tags}</div>`:''}</div>`;
 d.onclick=()=>openChat(c.phone,c.name);
 list.appendChild(d);
@@ -299,13 +362,32 @@ b.innerHTML=esc(m.body)+`<span class="meta">${fmtTime(m.at)}${m.dir==='outbound'
 const wr=await fetch('/inbox/api/conversations/'+cur+'/window').then(r=>r.json()).catch(()=>({open:true}));
 const convo=allConvos.find(c=>c.phone===cur);
 const pill=document.getElementById('chStatus');
-if(convo && convo.needsHuman){pill.className='status-pill pill-human';pill.innerText='🙋 Needs you';}
-else if(wr.open){pill.className='status-pill pill-open';pill.innerText='● Open';}
-else{pill.className='status-pill pill-closed';pill.innerText='● 24h closed';}
+const handledBtn=document.getElementById('handledBtn');
+if(convo && convo.needsHuman){
+pill.className='status-pill pill-human';pill.innerText='🙋 Needs you';
+handledBtn.style.display='inline-block';
+}else if(wr.open){
+pill.className='status-pill pill-open';pill.innerText='● Open';
+handledBtn.style.display='none';
+}else{
+pill.className='status-pill pill-closed';pill.innerText='● 24h closed';
+handledBtn.style.display='none';
+}
 if(!wr.open){document.getElementById('warn').style.display='block';document.getElementById('warn').innerText='This customer has not messaged in the last 24 hours. WhatsApp blocks free-text replies now — an approved template is required.';}
 else{document.getElementById('warn').style.display='none';}
 box.scrollTop=box.scrollHeight;
 }
+
+document.getElementById('handledBtn').onclick=async()=>{
+if(!cur)return;
+const btn=document.getElementById('handledBtn');btn.disabled=true;
+try{
+await fetch('/inbox/api/conversations/'+cur+'/mark-handled',{method:'POST'});
+toast('Marked as handled ✓');
+await loadConvos();await loadMsgs();
+}catch(e){toast('Could not update — try again.');}
+finally{btn.disabled=false;}
+};
 
 async function send(){
 const i=document.getElementById('input');const body=i.value.trim();if(!body||!cur)return;
@@ -314,7 +396,7 @@ try{const r=await fetch('/inbox/api/conversations/'+cur+'/reply',{method:'POST',
 const d=await r.json();
 if(!r.ok){document.getElementById('warn').style.display='block';document.getElementById('warn').innerText=d.message||'Could not send.';}
 else{i.value='';await loadMsgs();await loadConvos();}
-}catch(e){alert('Network error');}finally{btn.disabled=false;i.focus();}
+}catch(e){toast('Network error — message not sent.');}finally{btn.disabled=false;i.focus();}
 }
 
 document.getElementById('send').onclick=send;
@@ -326,7 +408,17 @@ document.querySelectorAll('.quick button').forEach(b=>b.onclick=()=>{document.ge
 loadConvos();
 setInterval(()=>{loadConvos();if(cur)loadMsgs();},5000);
 
-// ===== New message modal (cold outreach via approved template) =====
+// Deep link support: a tapped push notification navigates to /inbox?open=<phone>
+const params=new URLSearchParams(location.search);
+const openPhone=params.get('open');
+if(openPhone){
+loadConvos().then(()=>{
+const c=allConvos.find(x=>x.phone===openPhone);
+openChat(openPhone, c?c.name:openPhone);
+});
+}
+
+// ===== New message modal =====
 const nmModal=document.getElementById('newMsgModal');
 document.getElementById('newMsgBtn').onclick=()=>{
 document.getElementById('nmPhone').value='';
@@ -334,11 +426,11 @@ document.getElementById('nmName').value='';
 document.getElementById('nmVar1').value='';
 document.getElementById('nmVar2').value='';
 document.getElementById('nmWarn').style.display='none';
-nmModal.style.display='flex';
+nmModal.classList.add('show');
 document.getElementById('nmPhone').focus();
 };
-document.getElementById('nmCancel').onclick=()=>{nmModal.style.display='none';};
-nmModal.addEventListener('click',e=>{if(e.target===nmModal)nmModal.style.display='none';});
+document.getElementById('nmCancel').onclick=()=>{nmModal.classList.remove('show');};
+nmModal.addEventListener('click',e=>{if(e.target===nmModal)nmModal.classList.remove('show');});
 
 document.getElementById('nmSend').onclick=async()=>{
 const phone=document.getElementById('nmPhone').value.trim().replace(/[^0-9]/g,'');
@@ -354,10 +446,116 @@ try{
 const r=await fetch('/inbox/api/send-template',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,name,template,language:'en',params:[v1,v2],from})});
 const d=await r.json();
 if(!r.ok){warn.style.display='block';warn.innerText=d.message||'Could not send. Check the template is approved in Meta WhatsApp Manager.';}
-else{nmModal.style.display='none';await loadConvos();openChat(phone,name||phone);}
+else{nmModal.classList.remove('show');await loadConvos();openChat(phone,name||phone);}
 }catch(e){warn.style.display='block';warn.innerText='Network error.';}
 finally{btn.disabled=false;btn.innerText='Send';}
 };
+
+// ===== PWA: install prompt =====
+let deferredInstallPrompt=null;
+window.addEventListener('beforeinstallprompt', (e)=>{
+e.preventDefault();
+deferredInstallPrompt=e;
+if(!localStorage.getItem('ar_inbox_install_dismissed')){
+document.getElementById('installBanner').classList.add('show');
+}
+});
+document.getElementById('installBtn').onclick=async()=>{
+if(!deferredInstallPrompt)return;
+deferredInstallPrompt.prompt();
+await deferredInstallPrompt.userChoice;
+deferredInstallPrompt=null;
+document.getElementById('installBanner').classList.remove('show');
+};
+document.getElementById('installDismiss').onclick=()=>{
+document.getElementById('installBanner').classList.remove('show');
+localStorage.setItem('ar_inbox_install_dismissed','1');
+};
+
+// ===== PWA: service worker + push notifications =====
+function urlBase64ToUint8Array(base64String){
+const padding='='.repeat((4 - base64String.length % 4) % 4);
+const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');
+const raw=atob(base64);
+const arr=new Uint8Array(raw.length);
+for(let i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);
+return arr;
+}
+
+let swReg=null;
+async function initPush(){
+if(!('serviceWorker' in navigator)) return;
+try{
+swReg=await navigator.serviceWorker.register('/inbox/sw.js', {scope:'/inbox'});
+}catch(e){console.warn('SW registration failed', e);}
+updateBellUI();
+}
+
+async function updateBellUI(){
+const btn=document.getElementById('bellBtn');
+if(!('Notification' in window)){btn.style.display='none';return;}
+if(Notification.permission==='granted' && swReg){
+const sub=await swReg.pushManager.getSubscription().catch(()=>null);
+btn.innerText=sub?'🔔':'🔕';
+}else{
+btn.innerText='🔕';
+}
+}
+
+document.getElementById('bellBtn').onclick=()=>{
+document.getElementById('bellModal').classList.add('show');
+updateBellModalUI();
+};
+document.getElementById('bellCancel').onclick=()=>{document.getElementById('bellModal').classList.remove('show');};
+
+async function updateBellModalUI(){
+const desc=document.getElementById('bellDesc');
+const toggleBtn=document.getElementById('bellToggle');
+if(!('Notification' in window) || !('serviceWorker' in navigator)){
+desc.innerText='Push notifications are not supported in this browser.';
+toggleBtn.style.display='none';
+return;
+}
+if(Notification.permission==='denied'){
+desc.innerText='Notifications are blocked for this site. Enable them in your browser/app settings, then reopen this.';
+toggleBtn.style.display='none';
+return;
+}
+const sub=swReg?await swReg.pushManager.getSubscription().catch(()=>null):null;
+if(sub){
+desc.innerText='Notifications are on. You will be alerted the moment a customer messages you.';
+toggleBtn.innerText='Turn off';
+toggleBtn.onclick=async()=>{
+await fetch('/inbox/api/push/unsubscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endpoint:sub.endpoint})});
+await sub.unsubscribe();
+document.getElementById('bellModal').classList.remove('show');
+updateBellUI();
+toast('Notifications turned off.');
+};
+}else{
+desc.innerText='Get notified the moment a customer messages you, even when the inbox isn\\'t open.';
+toggleBtn.innerText='Enable';
+toggleBtn.onclick=subscribeToPush;
+}
+}
+
+async function subscribeToPush(){
+try{
+const perm=await Notification.requestPermission();
+if(perm!=='granted'){toast('Notifications permission was not granted.');return;}
+const {key}=await fetch('/inbox/api/push/vapid-public-key').then(r=>r.json());
+const sub=await swReg.pushManager.subscribe({
+userVisibleOnly:true,
+applicationServerKey:urlBase64ToUint8Array(key)
+});
+await fetch('/inbox/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sub)});
+document.getElementById('bellModal').classList.remove('show');
+updateBellUI();
+toast('Notifications enabled 🔔');
+}catch(e){console.error(e);toast('Could not enable notifications.');}
+}
+
+initPush();
 </script>
 </body>
 </html>
