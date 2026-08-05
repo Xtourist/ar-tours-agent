@@ -8,9 +8,35 @@ const bokun = require('./bokun');
 const { sendHandoffAlert } = require('./alert');
 const { sendLeadWebhook } = require('./leadWebhook');
 const { downloadMedia, getMediaPath } = require('./media');
+const webpush = require('web-push');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// --- Web push (PWA notifications) ---
+// VAPID keys identify this server to push services (Google/Mozilla/etc) —
+// they're not secret in the way an API key is (the public key is sent to
+// every browser that subscribes), but keep them stable across deploys via
+// env vars so existing subscriptions don't silently break.
+const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || 'BKbnoS5FxJfc2kyKqfAU6cCRnvio4rQuM3I3msM4fL9J8_Ozurw9BxmBpS3PQlZNNhORtUdFdtI4x3PTH09oi-s';
+const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || 'yTIJ-qFQvOL40tFOKv_vwB3VUfcOvCgV1ShUmBScbXE';
+webpush.setVapidDetails('mailto:human@theartours.com', VAPID_PUBLIC, VAPID_PRIVATE);
+
+async function notifyPush(title, body, phone) {
+  const subs = inbox.getPushSubscriptions();
+  if (!subs.length) return;
+  const payload = JSON.stringify({ title, body, phone });
+  await Promise.all(subs.map(sub =>
+    webpush.sendNotification(sub, payload).catch(err => {
+      // 410/404 = subscription expired or the user uninstalled/unsubscribed
+      if (err.statusCode === 410 || err.statusCode === 404) {
+        inbox.removePushSubscription(sub.endpoint);
+      } else {
+        console.warn('Push send failed:', err.message);
+      }
+    })
+  ));
+}
 
 // Capture the raw request body alongside JSON parsing. The Bokun webhook
 // needs the exact raw bytes to verify the HMAC signature — parsed/re-serialized
@@ -246,6 +272,7 @@ try {
 // Log the media in the inbox
 const caption = mediaObj.caption || `[${mediaType.toUpperCase()}]`;
 inbox.record(phoneNumber, userName, 'inbound', caption);
+notifyPush(userName || phoneNumber, `Sent a ${mediaType}${caption && caption !== `[${mediaType.toUpperCase()}]` ? ': ' + caption : ''}`, phoneNumber).catch(() => {});
 
 // Try to download and cache the media
 try {
@@ -284,6 +311,7 @@ const history = getConversationHistory(phoneNumber);
 history.push({ role: 'user', content: safeText });
 conversationHistory.set(phoneNumber, history);
 inbox.record(phoneNumber, userName, 'inbound', safeText);
+notifyPush(userName || phoneNumber, safeText.slice(0, 120), phoneNumber).catch(() => {});
 
 if (hasCard) {
 console.warn(`Card number detected and redacted from message by ${phoneNumber} — never storing or emailing it.`);
@@ -711,6 +739,50 @@ return res.status(401).send('Authentication required');
 
 app.get('/inbox', inboxAuth, (req, res) => {
 res.sendFile(path.join(__dirname, 'inbox.html'));
+});
+
+// ===== PWA assets: manifest, service worker, icons =====
+// Served under /inbox/* so the manifest's "scope" correctly limits the
+// installed app to just the inbox, not the whole domain. These are public
+// (no inboxAuth) since browsers fetch them before login / outside any
+// authenticated context (e.g. before the page has loaded cookies).
+app.get('/inbox/manifest.json', (req, res) => {
+res.type('application/manifest+json');
+res.sendFile(path.join(__dirname, 'manifest.json'));
+});
+app.get('/inbox/sw.js', (req, res) => {
+res.type('application/javascript');
+res.set('Service-Worker-Allowed', '/inbox');
+res.sendFile(path.join(__dirname, 'sw.js'));
+});
+['icon-192.png', 'icon-512.png', 'icon-maskable-192.png', 'icon-maskable-512.png'].forEach(name => {
+app.get('/inbox/' + name, (req, res) => {
+res.type('image/png');
+res.sendFile(path.join(__dirname, name));
+});
+});
+
+// Public VAPID key so the browser can subscribe to push. Not secret — every
+// subscribing browser receives this anyway.
+app.get('/inbox/api/push/vapid-public-key', (req, res) => {
+res.json({ key: VAPID_PUBLIC });
+});
+app.post('/inbox/api/push/subscribe', inboxAuth, (req, res) => {
+inbox.savePushSubscription(req.body);
+res.json({ ok: true });
+});
+app.post('/inbox/api/push/unsubscribe', inboxAuth, (req, res) => {
+if (req.body && req.body.endpoint) inbox.removePushSubscription(req.body.endpoint);
+res.json({ ok: true });
+});
+
+// "Mark as handled" — clears the Needs You flag without waiting the full
+// 12h auto-resume window. This is the fix for handoff tags staying stuck
+// after you've already replied to a customer.
+app.post('/inbox/api/conversations/:phone/mark-handled', inboxAuth, (req, res) => {
+humanHandoff.delete(req.params.phone);
+console.log(`Handoff cleared via inbox "Mark as handled" for ${req.params.phone}`);
+res.json({ ok: true });
 });
 app.get('/inbox/api/conversations', inboxAuth, (req, res) => {
 const list = inbox.listConversations();
