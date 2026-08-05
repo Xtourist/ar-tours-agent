@@ -14,17 +14,18 @@ const DATA_PATH = process.env.INBOX_DATA_PATH || path.join(__dirname, 'inbox-dat
 // that would be unnecessary work while there's only one operator.
 const OPERATOR_ID = process.env.OPERATOR_ID || 'ar_tours';
 
-let store = { conversations: {} }; // { [phone]: { name, lastAt, operatorId, businessNumberId, messages: [{dir, body, at}] } }
+let store = { conversations: {}, pushSubscriptions: [] }; // { [phone]: { name, lastAt, operatorId, businessNumberId, messages: [{dir, body, at}] } }, pushSubscriptions: [{endpoint, keys}]
 
 function load() {
 try {
 if (fs.existsSync(DATA_PATH)) {
 store = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
 if (!store.conversations) store.conversations = {};
+if (!store.pushSubscriptions) store.pushSubscriptions = [];
 }
 } catch (e) {
 console.warn('Inbox: could not load data file, starting fresh:', e.message);
-store = { conversations: {} };
+store = { conversations: {}, pushSubscriptions: [] };
 }
 }
 
@@ -104,9 +105,34 @@ const c = store.conversations[phone];
 return c ? c.businessNumberId || null : null;
 }
 
+// --- Human handoff clear (the "Mark as handled" button in /inbox) ---
+// Separate from unread/read status — this is about whether the bot has
+// paused itself for a conversation, not whether you've viewed the chat.
+// whatsapp_agent.js manages the actual in-memory handoff Map; this just
+// gives the UI a way to signal "I've dealt with this" without needing the
+// raw /admin/handoffs/release endpoint.
+
+// --- Web push subscriptions ---
+// Stored so a notification can be sent from any process (webhook handler)
+// without needing a live browser connection. Keyed by endpoint since that's
+// unique per browser/device subscription.
+function savePushSubscription(sub) {
+if (!sub || !sub.endpoint) return;
+const exists = store.pushSubscriptions.find(s => s.endpoint === sub.endpoint);
+if (!exists) store.pushSubscriptions.push(sub);
+save();
+}
+function removePushSubscription(endpoint) {
+store.pushSubscriptions = store.pushSubscriptions.filter(s => s.endpoint !== endpoint);
+save();
+}
+function getPushSubscriptions() {
+return store.pushSubscriptions || [];
+}
+
 load();
 
-module.exports = { record, listConversations, getMessages, isWindowOpen, setBusinessNumber, getBusinessNumber, OPERATOR_ID };
+module.exports = { record, listConversations, getMessages, isWindowOpen, setBusinessNumber, getBusinessNumber, savePushSubscription, removePushSubscription, getPushSubscriptions, OPERATOR_ID };
 
 // Media storage: keep track of downloaded media files mapped to messages
 const mediaStore = new Map();
