@@ -7,7 +7,7 @@ const inbox = require('./inbox');
 const bokun = require('./bokun');
 const { sendHandoffAlert } = require('./alert');
 const { sendLeadWebhook } = require('./leadWebhook');
-const { downloadMedia, getMediaPath } = require('./media');
+const { downloadMedia, streamMediaTo } = require('./media');
 const webpush = require('web-push');
 
 const app = express();
@@ -23,14 +23,14 @@ const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || 'yTIJ-qFQvOL40tFOKv_vwB3V
 webpush.setVapidDetails('mailto:human@theartours.com', VAPID_PUBLIC, VAPID_PRIVATE);
 
 async function notifyPush(title, body, phone) {
-  const subs = inbox.getPushSubscriptions();
+  const subs = await inbox.getPushSubscriptions();
   if (!subs.length) return;
   const payload = JSON.stringify({ title, body, phone });
   await Promise.all(subs.map(sub =>
-    webpush.sendNotification(sub, payload).catch(err => {
+    webpush.sendNotification(sub, payload).catch(async (err) => {
       // 410/404 = subscription expired or the user uninstalled/unsubscribed
       if (err.statusCode === 410 || err.statusCode === 404) {
-        inbox.removePushSubscription(sub.endpoint);
+        await inbox.removePushSubscription(sub.endpoint);
       } else {
         console.warn('Push send failed:', err.message);
       }
@@ -109,9 +109,9 @@ return true;
 // Build a readable transcript of the last N messages for this phone number,
 // so the handoff email/Sheet row includes conversation context instead of
 // just the single triggering message.
-function buildTranscript(phoneNumber, limit = 20) {
+async function buildTranscript(phoneNumber, limit = 20) {
 try {
-const messages = inbox.getMessages(phoneNumber) || [];
+const messages = (await inbox.getMessages(phoneNumber)) || [];
 const recent = messages.slice(-limit);
 return recent
 .map(m => `${m.dir === 'inbound' ? 'Customer' : 'Bot'} (${new Date(m.at).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne' })}): ${m.body}`)
@@ -122,11 +122,11 @@ return '';
 }
 }
 
-function startHandoff(phoneNumber, reason, context = {}) {
+async function startHandoff(phoneNumber, reason, context = {}) {
 humanHandoff.set(phoneNumber, { since: Date.now(), reason });
 console.log(`HANDOFF STARTED for ${phoneNumber} — reason: ${reason}. Bot will pause auto-replies; reply manually from WhatsApp Manager inbox.`);
 if (!context.silent) {
-const transcript = buildTranscript(phoneNumber);
+const transcript = await buildTranscript(phoneNumber);
 
 sendHandoffAlert({
 phone: phoneNumber,
@@ -199,7 +199,7 @@ const msgId = msg.id;
 // Remember which business number this conversation belongs to, so manual
 // replies from /inbox and future auto-replies use the right sender even
 // outside this webhook call.
-inbox.setBusinessNumber(phoneNumber, businessNumberId);
+await inbox.setBusinessNumber(phoneNumber, businessNumberId);
 
 if (msg.type === 'text') {
 const messageText = msg.text.body;
@@ -247,7 +247,7 @@ console.log(`Bokun booking recorded: ${summary.bookingId} — ${summary.tourName
 if (summary.phone) {
 try {
 const note = `📅 Bokun booking ${summary.status.toLowerCase().includes('cancel') ? 'cancelled' : 'update'}: ${summary.tourName}${summary.date ? ' on ' + summary.date : ''}${summary.pax ? ' for ' + summary.pax + ' pax' : ''} (${summary.bookingId})`;
-inbox.record(summary.phone, summary.customerName, 'inbound', note);
+await inbox.record(summary.phone, summary.customerName, 'inbound', note);
 } catch (noteErr) {
 console.warn('Could not attach Bokun booking note to inbox:', noteErr.message);
 }
@@ -271,13 +271,13 @@ async function handleMediaMessage(phoneNumber, userName, msgId, mediaType, media
 try {
 // Log the media in the inbox
 const caption = mediaObj.caption || `[${mediaType.toUpperCase()}]`;
-inbox.record(phoneNumber, userName, 'inbound', caption);
+await inbox.record(phoneNumber, userName, 'inbound', caption);
 notifyPush(userName || phoneNumber, `Sent a ${mediaType}${caption && caption !== `[${mediaType.toUpperCase()}]` ? ': ' + caption : ''}`, phoneNumber).catch(() => {});
 
 // Try to download and cache the media
 try {
 const mediaInfo = await downloadMedia(mediaObj.id, mediaType, process.env.WHATSAPP_ACCESS_TOKEN);
-inbox.recordMedia(phoneNumber, msgId, mediaInfo);
+await inbox.recordMedia(phoneNumber, msgId, mediaInfo);
 console.log(`Cached ${mediaType} for ${phoneNumber}: ${mediaInfo.filename}`);
 } catch (dlErr) {
 console.warn(`Could not download ${mediaType} for ${phoneNumber}:`, dlErr.message);
@@ -310,12 +310,12 @@ const safeText = hasCard ? redactCardNumbers(messageText) : messageText;
 const history = getConversationHistory(phoneNumber);
 history.push({ role: 'user', content: safeText });
 conversationHistory.set(phoneNumber, history);
-inbox.record(phoneNumber, userName, 'inbound', safeText);
+await inbox.record(phoneNumber, userName, 'inbound', safeText);
 notifyPush(userName || phoneNumber, safeText.slice(0, 120), phoneNumber).catch(() => {});
 
 if (hasCard) {
 console.warn(`Card number detected and redacted from message by ${phoneNumber} — never storing or emailing it.`);
-startHandoff(phoneNumber, 'customer sent payment/card details (redacted)', { name: userName, lastMessage: safeText });
+startHandoff(phoneNumber, 'customer sent payment/card details (redacted)', { name: userName, lastMessage: safeText }).catch(() => {});
 const cardMsg = "For your security, we never take card or payment details over WhatsApp — I haven't stored what you sent. 🙏 Our team will send you a secure payment link directly once your booking is confirmed. I've flagged this chat for a team member to follow up shortly.";
 history.push({ role: 'assistant', content: cardMsg });
 conversationHistory.set(phoneNumber, history);
@@ -332,7 +332,7 @@ return;
 
 // If the customer explicitly asks for a human, hand off immediately.
 if (isHandoffTriggered(messageText)) {
-startHandoff(phoneNumber, 'customer requested human', { name: userName, lastMessage: messageText });
+startHandoff(phoneNumber, 'customer requested human', { name: userName, lastMessage: messageText }).catch(() => {});
 const handoffMsg = "No problem! I've passed this on to one of our AR Tours travel specialists, who will follow up with you here shortly. 🙏\n\nIf it's urgent, you can also reach us directly:\n📧 human@theartours.com\n📞 +61 400 044 004";
 history.push({ role: 'assistant', content: handoffMsg });
 conversationHistory.set(phoneNumber, history);
@@ -350,7 +350,7 @@ await sendWhatsAppMessage(phoneNumber, response, businessNumberId);
 // If the AI itself couldn't answer (used the master-instructions fallback line),
 // also hand off so a human follows up rather than the bot repeating itself.
 if (response.toLowerCase().includes(FALLBACK_PHRASE)) {
-startHandoff(phoneNumber, 'AI could not answer the question', { name: userName, lastMessage: messageText });
+startHandoff(phoneNumber, 'AI could not answer the question', { name: userName, lastMessage: messageText }).catch(() => {});
 }
 } catch (error) {
 console.error('Error handling message:', error.message);
@@ -545,7 +545,7 @@ return history;
 // main number's env var if none is known yet (e.g. very first outbound send
 // before any inbound message has been recorded for this phone).
 async function sendWhatsAppMessage(phoneNumber, messageText, fromNumberId) {
-const senderId = fromNumberId || inbox.getBusinessNumber(phoneNumber) || process.env.PHONE_NUMBER_ID;
+const senderId = fromNumberId || (await inbox.getBusinessNumber(phoneNumber)) || process.env.PHONE_NUMBER_ID;
 try {
 await axios.post(
 `https://graph.facebook.com/v18.0/${senderId}/messages`,
@@ -563,7 +563,7 @@ headers: {
 }
 );
 console.log(`Sent to ${phoneNumber} from ${senderId}`);
-inbox.record(phoneNumber, null, 'outbound', messageText);
+await inbox.record(phoneNumber, null, 'outbound', messageText);
 } catch (error) {
 console.error('Error sending message:', error.response ? JSON.stringify(error.response.data) : error.message);
 }
@@ -605,7 +605,7 @@ console.log(`Template "${templateName}" sent to ${phoneNumber} from ${senderId}`
 // Record a readable version in the inbox so it shows in the chat history
 // like any other outbound message.
 const readable = bodyParams.length ? `[Template: ${templateName}] ${bodyParams.join(' / ')}` : `[Template: ${templateName}]`;
-inbox.record(phoneNumber, null, 'outbound', readable);
+await inbox.record(phoneNumber, null, 'outbound', readable);
 }
 
 // Start a new conversation with a phone number that hasn't messaged us yet.
@@ -621,8 +621,8 @@ if (from === 'second' && !fromNumberId) {
 return res.status(400).json({ error: 'not_configured', message: 'SECOND_PHONE_NUMBER_ID is not set on the server yet.' });
 }
 await sendWhatsAppTemplate(phone, template, language, Array.isArray(params) ? params : [], fromNumberId);
-if (from === 'second') inbox.setBusinessNumber(phone, fromNumberId);
-if (name) inbox.record(phone, name, 'outbound', `[Template: ${template}]`);
+if (from === 'second') await inbox.setBusinessNumber(phone, fromNumberId);
+if (name) await inbox.record(phone, name, 'outbound', `[Template: ${template}]`);
 res.json({ ok: true });
 } catch (error) {
 const details = error.response ? error.response.data : { message: error.message };
@@ -631,15 +631,9 @@ res.status(502).json({ error: 'send_failed', message: details.error ? details.er
 }
 });
 
-app.get('/inbox/api/media/:mediaId', inboxAuth, (req, res) => {
+app.get('/inbox/api/media/:mediaId', inboxAuth, async (req, res) => {
 try {
-const path = getMediaPath(req.params.mediaId);
-if (!fs.existsSync(path)) {
-return res.status(404).json({ error: 'Media not found' });
-}
-const mime = require('./media').getMediaMime(req.params.mediaId);
-res.type(mime);
-res.sendFile(path);
+await streamMediaTo(req.params.mediaId, res);
 } catch (error) {
 res.status(500).json({ error: error.message });
 }
@@ -767,12 +761,12 @@ res.sendFile(path.join(__dirname, name));
 app.get('/inbox/api/push/vapid-public-key', (req, res) => {
 res.json({ key: VAPID_PUBLIC });
 });
-app.post('/inbox/api/push/subscribe', inboxAuth, (req, res) => {
-inbox.savePushSubscription(req.body);
+app.post('/inbox/api/push/subscribe', inboxAuth, async (req, res) => {
+await inbox.savePushSubscription(req.body);
 res.json({ ok: true });
 });
-app.post('/inbox/api/push/unsubscribe', inboxAuth, (req, res) => {
-if (req.body && req.body.endpoint) inbox.removePushSubscription(req.body.endpoint);
+app.post('/inbox/api/push/unsubscribe', inboxAuth, async (req, res) => {
+if (req.body && req.body.endpoint) await inbox.removePushSubscription(req.body.endpoint);
 res.json({ ok: true });
 });
 
@@ -784,8 +778,8 @@ humanHandoff.delete(req.params.phone);
 console.log(`Handoff cleared via inbox "Mark as handled" for ${req.params.phone}`);
 res.json({ ok: true });
 });
-app.get('/inbox/api/conversations', inboxAuth, (req, res) => {
-const list = inbox.listConversations();
+app.get('/inbox/api/conversations', inboxAuth, async (req, res) => {
+const list = await inbox.listConversations();
 // Attach needsHuman flag + latest matched Bokun booking (tour/date/pax) so
 // the mobile inbox can show a tour tag on each row and sort handed-off /
 // unanswered chats to the top, without a round trip per conversation.
@@ -806,21 +800,21 @@ app.get('/inbox/api/handoff-status', inboxAuth, (req, res) => {
 const list = Array.from(humanHandoff.keys());
 res.json({ phones: list });
 });
-app.get('/inbox/api/conversations/:phone/messages', inboxAuth, (req, res) => {
-res.json(inbox.getMessages(req.params.phone));
+app.get('/inbox/api/conversations/:phone/messages', inboxAuth, async (req, res) => {
+res.json(await inbox.getMessages(req.params.phone));
 });
-app.get('/inbox/api/conversations/:phone/window', inboxAuth, (req, res) => {
-res.json({ open: inbox.isWindowOpen(req.params.phone) });
+app.get('/inbox/api/conversations/:phone/window', inboxAuth, async (req, res) => {
+res.json({ open: await inbox.isWindowOpen(req.params.phone) });
 });
 app.post('/inbox/api/conversations/:phone/reply', inboxAuth, async (req, res) => {
 const { phone } = req.params;
 const { body } = req.body;
 if (!body || !body.trim()) return res.status(400).json({ error: 'empty' });
-if (!inbox.isWindowOpen(phone)) {
+if (!(await inbox.isWindowOpen(phone))) {
 return res.status(409).json({ error: 'window_closed', message: 'This customer has not messaged in the last 24 hours, so WhatsApp blocks free-text replies. You would need an approved template message instead.' });
 }
 // Sending manually implies a human is handling this chat: pause the bot for them.
-try { startHandoff(phone, 'human replied from inbox', { silent: true }); } catch (e) {}
+startHandoff(phone, 'human replied from inbox', { silent: true }).catch(() => {});
 await sendWhatsAppMessage(phone, body);
 res.json({ ok: true });
 });
@@ -828,3 +822,15 @@ res.json({ ok: true });
 app.listen(PORT, () => {
 console.log(`AR Tours WhatsApp agent running on port ${PORT}`);
 });
+
+// Keep-alive: Render's free tier spins the service down after ~15 minutes of
+// no inbound traffic, and the next request then waits ~30-50s for a cold
+// start. Pinging our own /health endpoint every 10 minutes keeps the
+// service awake during business hours so replies stay fast. This does NOT
+// prevent data loss on its own (chat history/media now live in Supabase, so
+// that's already solved) — it just means fewer cold starts.
+if (process.env.SELF_PING_URL) {
+setInterval(() => {
+axios.get(`${process.env.SELF_PING_URL.replace(/\/$/, '')}/health`).catch(() => {});
+}, 10 * 60 * 1000);
+}
