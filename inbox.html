@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <title>AR Tours — Inbox</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
-<meta name="theme-color" content="#075E54" />
+<meta name="theme-color" content="#128C7E" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -12,228 +12,581 @@
 <link rel="manifest" href="/inbox/manifest.json" />
 <link rel="apple-touch-icon" href="/inbox/icon-192.png" />
 <style>
-:root{
---brand:#128C7E; --brand-dark:#075E54; --green:#25D366; --accent:#34B7F1;
---bg:#f7f8fa; --panel:#fff; --ink:#0b1720; --muted:#65788a; --line:#e7ebef;
---bubble-in:#fff; --bubble-out:#dcfce0; --alert:#e0442b; --alert-bg:#fdeceb;
---shadow:0 1px 3px rgba(11,23,32,.06),0 1px 2px rgba(11,23,32,.08);
---shadow-md:0 4px 14px rgba(11,23,32,.10);
---radius:14px;
+:root {
+  /* Colors */
+  --brand: #128C7E;
+  --brand-dark: #075E54;
+  --green: #25D366;
+  --accent: #34B7F1;
+  --bg: #efeae2; /* WhatsApp web background */
+  --panel: #ffffff;
+  --panel-hover: #f5f6f6;
+  --panel-active: #ebebeb;
+  --ink: #111b21;
+  --muted: #667781;
+  --line: #e9edef;
+  --bubble-in: #ffffff;
+  --bubble-out: #d9fdd3;
+  --alert: #ea0038;
+  --alert-bg: #ffebee;
+  --chat-bg: #efeae2;
+  
+  /* Layout */
+  --shadow-sm: 0 1px 3px rgba(11,23,32,.06),0 1px 2px rgba(11,23,32,.08);
+  --shadow-md: 0 4px 14px rgba(11,23,32,.10);
+  --shadow-lg: 0 16px 40px rgba(0,0,0,.25);
+  --radius: 16px;
+  --radius-btn: 24px;
 }
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);overscroll-behavior:none;-webkit-font-smoothing:antialiased}
-button{font-family:inherit}
 
-/* ===== App shell ===== */
-.app{display:flex;height:100vh;height:100dvh}
-.side{background:var(--panel);display:flex;flex-direction:column;width:100%;min-width:0}
-.chat{display:none;flex-direction:column;min-width:0;background:#eef1f4;width:100%}
-.app.show-chat .side{display:none}
-.app.show-chat .chat{display:flex}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --brand: #00a884;
+    --brand-dark: #008f6f;
+    --green: #00a884;
+    --accent: #53bdeb;
+    --bg: #0b141a;
+    --panel: #111b21;
+    --panel-hover: #202c33;
+    --panel-active: #2a3942;
+    --ink: #e9edef;
+    --muted: #8696a0;
+    --line: #222e35;
+    --bubble-in: #202c33;
+    --bubble-out: #005c4b;
+    --alert: #ef697a;
+    --alert-bg: #3b1b22;
+    --chat-bg: #0b141a;
+  }
+}
 
-@media(min-width:860px){
-.app{display:grid;grid-template-columns:390px 1fr}
-.side{display:flex !important;border-right:1px solid var(--line)}
-.chat{display:flex !important}
-.app.show-chat .side{display:flex !important}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; }
+body { 
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+}
+button { font-family: inherit; }
+input, select, textarea { font-family: inherit; color: inherit; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 10px; }
+@media (prefers-color-scheme: dark) {
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); }
+}
+
+/* App Shell */
+.app {
+  display: flex;
+  height: 100vh;
+  height: 100dvh;
+  width: 100%;
+  overflow: hidden;
+}
+
+.side {
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  z-index: 10;
+}
+
+.main-area {
+  display: none;
+  flex: 1;
+  min-width: 0;
+  flex-direction: row;
+}
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  background: var(--chat-bg);
+  position: relative;
+}
+
+.contact-info {
+  display: none;
+  width: 320px;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+/* Mobile View Transitions */
+.app.show-chat .side { display: none; }
+.app.show-chat .main-area { display: flex; }
+
+/* Tablet */
+@media (min-width: 600px) {
+  .app { display: flex; }
+  .side { width: 320px; flex-shrink: 0; display: flex !important; }
+  .main-area { display: flex !important; }
+}
+
+/* Desktop */
+@media (min-width: 960px) {
+  .side { width: 360px; }
+  .app.show-info .contact-info { display: flex; }
 }
 
 /* ===== Sidebar ===== */
-.side-head{background:linear-gradient(135deg,var(--brand-dark),#0a3f39);color:#fff;padding:16px 18px;display:flex;align-items:center;gap:12px;flex-shrink:0}
-.logo{width:38px;height:38px;border-radius:11px;background:var(--green);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#fff;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,.2)}
-.side-head h1{font-size:16px;font-weight:700;line-height:1.2;letter-spacing:-.01em}
-.side-head .sub{font-size:11.5px;opacity:.7}
-.icon-btn{background:rgba(255,255,255,.14);border:none;color:#fff;width:36px;height:36px;border-radius:50%;font-size:19px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:background .15s}
-.icon-btn:active{background:rgba(255,255,255,.28)}
-.search{padding:10px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex-shrink:0}
-.search input{width:100%;padding:10px 14px 10px 38px;border:none;border-radius:20px;background:var(--bg);font-size:15px;outline:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2365788a' stroke-width='2'%3E%3Ccircle cx='7' cy='7' r='5.5'/%3E%3Cpath d='M11 11L15 15' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:12px center}
-.section-label{padding:12px 18px 6px;font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-.convos{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
-.convo{display:flex;gap:12px;padding:12px 16px;cursor:pointer;align-items:center;transition:background .1s;position:relative}
-.convo:active{background:#eef1f3}
-.convo.active{background:#e5f6ec}
-.convo.needs-human{background:#fffaf9}
-.convo.needs-human.active{background:#e5f6ec}
-.avatar{width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,var(--brand),var(--accent));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;flex-shrink:0;text-transform:uppercase;position:relative}
-.avatar .dot{position:absolute;bottom:-1px;right:-1px;width:15px;height:15px;border-radius:50%;background:var(--alert);border:2.5px solid var(--panel)}
-.convo-body{flex:1;min-width:0}
-.convo-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
-.convo-name{font-weight:600;font-size:15.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.convo-time{font-size:11.5px;color:var(--muted);flex-shrink:0}
-.convo-prev{font-size:13.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;display:flex;justify-content:space-between;gap:8px;align-items:center}
-.unread-dot{width:9px;height:9px;border-radius:50%;background:var(--green);flex-shrink:0}
-.tags{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap}
-.tag{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap;letter-spacing:.01em}
-.tag-tour{background:#e7f3fb;color:#0a6ea8}
-.tag-human{background:var(--alert-bg);color:var(--alert)}
+.side-head {
+  background: var(--panel);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--line);
+}
+.logo {
+  width: 40px; height: 40px; border-radius: 12px;
+  background: var(--brand); display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 15px; color: #fff; flex-shrink: 0;
+}
+.side-head .brand-text { flex: 1; }
+.side-head h1 { font-size: 16px; font-weight: 600; }
+.side-head .sub { font-size: 12px; color: var(--muted); }
+.icon-btn {
+  background: transparent; border: none; color: var(--muted);
+  width: 36px; height: 36px; border-radius: 50%; font-size: 18px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s;
+}
+.icon-btn:hover { background: var(--panel-hover); }
 
-/* ===== Chat header ===== */
-.chat-head{background:var(--panel);border-bottom:1px solid var(--line);padding:10px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0;box-shadow:var(--shadow)}
-.back-btn{display:flex;background:none;border:none;font-size:22px;color:var(--brand-dark);cursor:pointer;padding:4px 6px 4px 0;flex-shrink:0}
-@media(min-width:860px){.back-btn{display:none}}
-.chat-head .avatar{width:40px;height:40px;font-size:15px}
-.chat-head .info{flex:1;min-width:0}
-.chat-head .n{font-weight:700;font-size:15px}
-.chat-head .s{font-size:12px;color:var(--muted)}
-.status-pill{font-size:11px;padding:5px 11px;border-radius:20px;font-weight:700;white-space:nowrap}
-.pill-open{background:#e5f6ec;color:#0a7a41}
-.pill-closed{background:#fde8e8;color:#b42318}
-.pill-human{background:var(--alert-bg);color:var(--alert)}
-.handled-btn{font-size:11.5px;font-weight:700;padding:6px 12px;border-radius:20px;border:none;background:var(--brand-dark);color:#fff;cursor:pointer;white-space:nowrap;flex-shrink:0}
-.handled-btn:active{opacity:.8}
+.search { padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); flex-shrink: 0; }
+.search-box {
+  display: flex; align-items: center; background: var(--panel-hover);
+  border-radius: 8px; padding: 6px 12px; gap: 8px;
+}
+.search-box input {
+  flex: 1; border: none; background: transparent; font-size: 14px; outline: none;
+}
+.search-box svg { fill: var(--muted); width: 16px; height: 16px; }
+
+.convos { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--panel); }
+.section-label { padding: 16px 16px 8px; font-size: 12px; font-weight: 600; color: var(--brand); text-transform: uppercase; letter-spacing: 0.05em; }
+.section-label.needs-attention { color: var(--alert); }
+
+.convo {
+  display: flex; gap: 12px; padding: 12px 16px; cursor: pointer;
+  align-items: center; transition: background 0.1s; position: relative;
+}
+.convo:hover { background: var(--panel-hover); }
+.convo:active { background: var(--panel-active); }
+.convo.active { background: var(--panel-active); }
+
+.avatar {
+  width: 48px; height: 48px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--brand), var(--accent));
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  font-weight: 600; font-size: 18px; flex-shrink: 0; text-transform: uppercase;
+  position: relative;
+}
+.avatar .dot {
+  position: absolute; bottom: 0; right: 0; width: 14px; height: 14px;
+  border-radius: 50%; background: var(--alert); border: 2px solid var(--panel);
+}
+
+.convo-body { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.convo-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+.convo-name { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+.convo-time { font-size: 12px; color: var(--muted); flex-shrink: 0; }
+.convo-prev { font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.convo-prev-text { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sender-you { color: var(--muted); font-weight: 500; }
+.unread-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+
+.tags { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 12px; white-space: nowrap; }
+.tag-tour { background: rgba(52,183,241,0.15); color: var(--accent); }
+.tag-human { background: var(--alert-bg); color: var(--alert); }
+
+/* ===== Chat Header ===== */
+.chat-head {
+  background: var(--panel); border-bottom: 1px solid var(--line);
+  padding: 10px 16px; display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+  z-index: 10;
+}
+.back-btn { display: flex; background: none; border: none; font-size: 24px; color: var(--muted); cursor: pointer; padding: 4px; margin-left: -8px; flex-shrink: 0; }
+@media(min-width: 600px){ .back-btn { display: none; } }
+
+.chat-head .avatar { width: 40px; height: 40px; font-size: 16px; cursor: pointer; }
+.chat-head .info { flex: 1; min-width: 0; cursor: pointer; display: flex; flex-direction: column; justify-content: center; }
+.chat-head .n { font-weight: 600; font-size: 16px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-head .s { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.status-pill { font-size: 12px; padding: 4px 12px; border-radius: 12px; font-weight: 600; white-space: nowrap; }
+.pill-open { background: rgba(37,211,102,0.15); color: var(--green); }
+.pill-closed { background: var(--alert-bg); color: var(--alert); }
+.pill-human { background: var(--alert-bg); color: var(--alert); }
+.handled-btn {
+  font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 20px;
+  border: none; background: var(--brand); color: #fff; cursor: pointer; white-space: nowrap; flex-shrink: 0;
+}
+.handled-btn:hover { filter: brightness(1.1); }
+.handled-btn:active { transform: scale(0.98); }
+.header-actions { display: flex; gap: 8px; align-items: center; }
 
 /* ===== Bokun booking card ===== */
-.bokun-card{margin:10px 6% 0;background:#fff;border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow-md);border-left:4px solid var(--accent)}
-@media(min-width:860px){.bokun-card{margin:14px 8% 0}}
-.bokun-card .bt{font-size:11px;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
-.bokun-card .bn{font-weight:700;font-size:15px}
-.bokun-card .bd{font-size:13px;color:var(--muted);margin-top:3px}
-.bokun-card .bstatus{display:inline-block;margin-top:7px;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;background:#e7f3fb;color:#0a6ea8}
+.bokun-card {
+  margin: 12px 16px 0; background: var(--panel); border-radius: 8px;
+  padding: 12px 16px; box-shadow: var(--shadow-sm); border-left: 4px solid var(--accent);
+}
+.bokun-card .bt { font-size: 11px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+.bokun-card .bn { font-weight: 600; font-size: 15px; color: var(--ink); }
+.bokun-card .bd { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.bokun-card .bstatus { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 12px; background: rgba(52,183,241,0.1); color: var(--accent); }
 
 /* ===== Messages ===== */
-.msgs{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 4% 8px;display:flex;flex-direction:column;gap:6px;background-image:radial-gradient(circle at 1px 1px, rgba(11,23,32,.035) 1px, transparent 0);background-size:22px 22px}
-@media(min-width:860px){.msgs{padding:24px 8%}}
-.bubble{max-width:82%;padding:9px 13px;border-radius:16px;font-size:14.5px;line-height:1.45;white-space:pre-wrap;word-wrap:break-word;box-shadow:var(--shadow);position:relative;animation:pop .18s ease-out}
-@keyframes pop{from{opacity:0;transform:translateY(4px) scale(.98)}to{opacity:1;transform:none}}
-@media(min-width:860px){.bubble{max-width:62%}}
-.in{align-self:flex-start;background:var(--bubble-in);border-bottom-left-radius:4px}
-.out{align-self:flex-end;background:var(--bubble-out);border-bottom-right-radius:4px}
-.meta{display:block;font-size:10.5px;color:var(--muted);text-align:right;margin-top:4px}
-.daysep{align-self:center;background:rgba(255,255,255,.9);color:var(--muted);font-size:11.5px;font-weight:600;padding:5px 14px;border-radius:20px;margin:10px 0;box-shadow:var(--shadow)}
-.media-bubble{max-width:78%;border-radius:16px;overflow:hidden}
-@media(min-width:860px){.media-bubble{max-width:300px}}
-.media-img{width:100%;height:auto;display:block}
-.media-file{display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(0,0,0,.045);border-radius:10px;margin:4px 0}
-.media-icon{font-size:22px}
-.media-info{flex:1;min-width:0}
-.media-name{font-size:12.5px;font-weight:600;word-break:break-word}
-.media-size{font-size:10.5px;color:var(--muted);margin-top:2px}
-.media-link{color:var(--brand);text-decoration:none;font-weight:600;cursor:pointer}
-.media-link:hover{text-decoration:underline}
+.chat-bg {
+  position: absolute; inset: 0; z-index: 0; opacity: 0.4;
+  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%239C92AC' fill-opacity='0.15'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+@media (prefers-color-scheme: dark) { .chat-bg { opacity: 0.05; } }
+
+.msgs {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 16px 5%; display: flex; flex-direction: column; gap: 4px;
+  position: relative; z-index: 1;
+}
+@media (min-width: 860px) { .msgs { padding: 24px 8%; } }
+
+.bubble {
+  max-width: 85%; padding: 6px 8px 8px 10px; border-radius: 8px;
+  font-size: 14.5px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word;
+  box-shadow: 0 1px 1px rgba(11,23,32,0.1); position: relative;
+  animation: popIn 0.2s cubic-bezier(0.1, 0.9, 0.2, 1);
+}
+@keyframes popIn { from { opacity: 0; transform: translateY(10px) scale(0.95); } to { opacity: 1; transform: none; } }
+@media (min-width: 860px) { .bubble { max-width: 65%; } }
+
+.in { align-self: flex-start; background: var(--bubble-in); border-top-left-radius: 0; margin-top: 4px; }
+.out { align-self: flex-end; background: var(--bubble-out); border-top-right-radius: 0; margin-top: 4px; }
+.in::before {
+  content: ''; position: absolute; top: 0; left: -8px; width: 0; height: 0;
+  border-style: solid; border-width: 0 8px 10px 0; border-color: transparent var(--bubble-in) transparent transparent;
+}
+.out::before {
+  content: ''; position: absolute; top: 0; right: -8px; width: 0; height: 0;
+  border-style: solid; border-width: 0 0 10px 8px; border-color: transparent transparent transparent var(--bubble-out);
+}
+
+.msg-content { display: inline-block; min-width: 40px; margin-right: 48px; }
+.meta {
+  float: right; font-size: 11px; color: var(--muted); margin-top: 8px; margin-left: -40px;
+  display: flex; align-items: center; gap: 4px; height: 15px; position: relative; top: 4px;
+}
+.meta .ticks { color: #53bdeb; font-size: 14px; line-height: 1; letter-spacing: -2px; margin-right: 2px; }
+
+.daysep {
+  align-self: center; background: var(--panel); color: var(--muted);
+  font-size: 12px; font-weight: 500; padding: 6px 14px; border-radius: 8px;
+  margin: 16px 0; box-shadow: 0 1px 1px rgba(11,23,32,0.1); text-transform: uppercase;
+}
+
+.media-bubble { padding: 4px; overflow: hidden; }
+.media-img { width: 100%; height: auto; display: block; border-radius: 6px; max-width: 300px; }
+.media-file { display: flex; align-items: center; gap: 12px; padding: 8px; background: rgba(0,0,0,0.05); border-radius: 6px; }
+@media (prefers-color-scheme: dark) { .media-file { background: rgba(255,255,255,0.05); } }
+.media-icon { font-size: 24px; }
+.media-info { flex: 1; min-width: 0; }
+.media-name { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.media-size { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.media-link { color: var(--brand); text-decoration: none; font-weight: 600; }
+.media-link:hover { text-decoration: underline; }
 
 /* ===== Quick actions + composer ===== */
-.quick{display:flex;gap:6px;padding:8px 10px 0;flex-wrap:wrap;flex-shrink:0;overflow-x:auto}
-.quick button{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:8px 14px;font-size:12.5px;color:var(--brand-dark);cursor:pointer;white-space:nowrap;font-weight:600;transition:background .1s}
-.quick button:active{background:#e5f6ec}
-.composer{background:var(--panel);padding:10px 10px calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px;align-items:center;border-top:1px solid var(--line);flex-shrink:0}
-.composer input{flex:1;padding:13px 16px;border:none;border-radius:24px;background:var(--bg);font-size:16px;outline:none;min-width:0}
-.composer button{background:var(--green);color:#fff;border:none;width:48px;height:48px;border-radius:50%;cursor:pointer;font-size:19px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 8px rgba(37,211,102,.4);transition:transform .1s}
-.composer button:active{transform:scale(.92)}
-.composer button:disabled{background:#b9e7c9;cursor:not-allowed;box-shadow:none}
+.warn { background: var(--alert-bg); color: var(--alert); padding: 12px 16px; font-size: 13px; font-weight: 500; text-align: center; flex-shrink: 0; z-index: 10; }
 
-.empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);text-align:center;gap:6px;padding:40px}
-.empty .big{font-size:52px;margin-bottom:6px}
-.warn{background:#fff3cd;color:#7a5c00;padding:10px 6%;font-size:13px;border-top:1px solid #f0e0a8;flex-shrink:0}
-.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1a2530;color:#fff;padding:11px 20px;border-radius:24px;font-size:13.5px;font-weight:600;box-shadow:0 6px 20px rgba(0,0,0,.25);z-index:100;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
-.toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
+.quick {
+  display: flex; gap: 8px; padding: 10px 16px; flex-wrap: nowrap; overflow-x: auto;
+  background: var(--chat-bg); flex-shrink: 0; z-index: 10; -webkit-overflow-scrolling: touch;
+}
+.quick::-webkit-scrollbar { display: none; }
+.quick button {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 8px 16px;
+  font-size: 13px; color: var(--brand); cursor: pointer; white-space: nowrap; font-weight: 600;
+  box-shadow: var(--shadow-sm); transition: background 0.1s;
+}
+.quick button:hover { background: var(--panel-hover); }
 
-/* Modal */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(11,23,32,.5);z-index:50;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(2px)}
-.modal-overlay.show{display:flex}
-.modal{background:#fff;border-radius:18px;padding:22px;width:100%;max-width:400px;max-height:90vh;overflow-y:auto;box-shadow:0 16px 40px rgba(0,0,0,.25)}
-.modal h2{font-size:17px;font-weight:700;margin-bottom:4px}
-.modal .desc{font-size:12.5px;color:var(--muted);margin-bottom:16px;line-height:1.4}
-.field-label{font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:5px}
-.field{width:100%;padding:12px 14px;border:1.5px solid var(--line);border-radius:10px;margin-bottom:14px;font-size:15px;outline:none;transition:border-color .15s}
-.field:focus{border-color:var(--brand)}
-.modal-actions{display:flex;gap:10px;margin-top:6px}
-.btn-secondary{flex:1;padding:12px;border-radius:24px;border:1.5px solid var(--line);background:#fff;font-size:14.5px;font-weight:600;cursor:pointer}
-.btn-primary{flex:1;padding:12px;border-radius:24px;border:none;background:var(--green);color:#fff;font-size:14.5px;font-weight:700;cursor:pointer;box-shadow:0 3px 10px rgba(37,211,102,.35)}
-.btn-primary:disabled{opacity:.6;box-shadow:none}
-.alert-box{display:none;background:var(--alert-bg);color:var(--alert);font-size:13px;padding:9px 11px;border-radius:10px;margin-bottom:14px;font-weight:500}
+.composer {
+  background: var(--panel); padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  display: flex; gap: 12px; align-items: flex-end; flex-shrink: 0; z-index: 10;
+}
+.composer input {
+  flex: 1; padding: 12px 16px; border: none; border-radius: 20px;
+  background: var(--panel-hover); font-size: 15px; outline: none; min-width: 0;
+  transition: background 0.2s; height: 44px;
+}
+.composer input:focus { background: var(--panel); box-shadow: inset 0 0 0 1px var(--brand); }
+.composer button {
+  background: var(--brand); color: #fff; border: none; width: 44px; height: 44px;
+  border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: transform 0.1s; padding-left: 3px;
+}
+.composer button svg { width: 20px; height: 20px; fill: currentColor; }
+.composer button:active { transform: scale(0.92); }
+.composer button:disabled { background: var(--muted); cursor: not-allowed; opacity: 0.5; }
+
+.empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); text-align: center; gap: 12px; padding: 40px; }
+.empty .big { font-size: 64px; }
+.empty-text { font-size: 15px; max-width: 280px; line-height: 1.5; }
+
+/* ===== Contact Info Panel ===== */
+.ci-header { padding: 16px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
+.ci-close { background: none; border: none; color: var(--muted); font-size: 24px; cursor: pointer; display: none; }
+@media (max-width: 959px) {
+  .contact-info { position: absolute; inset: 0; z-index: 20; display: flex; transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.1, 0.9, 0.2, 1); }
+  .app.show-info .contact-info { transform: translateX(0); }
+  .ci-close { display: block; }
+}
+
+.ci-profile { padding: 32px 16px; display: flex; flex-direction: column; align-items: center; border-bottom: 8px solid var(--chat-bg); }
+.ci-profile .avatar { width: 120px; height: 120px; font-size: 40px; margin-bottom: 16px; }
+.ci-name { font-size: 20px; font-weight: 600; margin-bottom: 4px; color: var(--ink); text-align: center; }
+.ci-phone { font-size: 15px; color: var(--muted); margin-bottom: 16px; }
+.ci-actions { display: flex; gap: 16px; }
+.ci-btn { display: flex; flex-direction: column; align-items: center; gap: 8px; background: none; border: none; cursor: pointer; color: var(--brand); font-weight: 500; font-size: 13px; }
+.ci-btn-icon { width: 44px; height: 44px; border-radius: 12px; background: rgba(18,140,126,0.1); display: flex; align-items: center; justify-content: center; font-size: 20px; }
+.ci-btn:hover .ci-btn-icon { background: rgba(18,140,126,0.2); }
+
+.ci-section { padding: 20px 16px; border-bottom: 8px solid var(--chat-bg); }
+.ci-title { font-size: 14px; font-weight: 600; color: var(--muted); margin-bottom: 12px; }
+.ci-item { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }
+.ci-item:last-child { margin-bottom: 0; }
+.ci-label { font-size: 13px; color: var(--muted); }
+.ci-value { font-size: 15px; color: var(--ink); }
+
+/* Toasts & Modals */
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  background: var(--ink); color: var(--bg); padding: 12px 24px; border-radius: 24px;
+  font-size: 14px; font-weight: 500; box-shadow: var(--shadow-md); z-index: 100;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(-8px); }
+
+.modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(11,23,32,0.6);
+  z-index: 100; align-items: center; justify-content: center; padding: 16px; backdrop-filter: blur(4px);
+}
+.modal-overlay.show { display: flex; }
+.modal { background: var(--panel); border-radius: 20px; padding: 24px; width: 100%; max-width: 440px; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg); }
+.modal h2 { font-size: 20px; font-weight: 700; margin-bottom: 8px; color: var(--ink); }
+.modal .desc { font-size: 14px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+.field-label { font-size: 13px; font-weight: 600; color: var(--ink); display: block; margin-bottom: 6px; }
+.field { width: 100%; padding: 12px 16px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 16px; font-size: 15px; outline: none; background: var(--panel-hover); transition: border-color 0.15s, background 0.15s; }
+.field:focus { border-color: var(--brand); background: var(--panel); }
+textarea.field { resize: vertical; min-height: 80px; }
+.modal-actions { display: flex; gap: 12px; margin-top: 8px; }
+.btn-secondary { flex: 1; padding: 12px; border-radius: 24px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font-size: 15px; font-weight: 600; cursor: pointer; }
+.btn-secondary:hover { background: var(--panel-hover); }
+.btn-primary { flex: 1; padding: 12px; border-radius: 24px; border: none; background: var(--brand); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+.btn-primary:hover { background: var(--brand-dark); }
+.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+.alert-box { display: none; background: var(--alert-bg); color: var(--alert); font-size: 14px; padding: 12px; border-radius: 12px; margin-bottom: 16px; font-weight: 500; }
 
 /* Install prompt banner */
-.install-banner{display:none;align-items:center;gap:10px;background:linear-gradient(135deg,var(--brand-dark),#0a3f39);color:#fff;padding:12px 16px;flex-shrink:0}
-.install-banner.show{display:flex}
-.install-banner .txt{flex:1;font-size:13px;font-weight:600}
-.install-banner .txt small{display:block;font-weight:400;opacity:.75;font-size:11.5px;margin-top:1px}
-.install-banner button{background:var(--green);color:#fff;border:none;padding:8px 14px;border-radius:16px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap}
-.install-banner .dismiss{background:none;color:#fff;opacity:.7;font-size:20px;padding:0 4px;cursor:pointer}
+.install-banner { display: none; align-items: center; gap: 12px; background: var(--brand-dark); color: #fff; padding: 12px 16px; flex-shrink: 0; }
+.install-banner.show { display: flex; }
+.install-banner .txt { flex: 1; font-size: 14px; font-weight: 600; }
+.install-banner .txt small { display: block; font-weight: 400; opacity: 0.8; font-size: 12px; margin-top: 2px; }
+.install-banner button { background: var(--green); color: #fff; border: none; padding: 8px 16px; border-radius: 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.install-banner .dismiss { background: none; color: #fff; opacity: 0.8; font-size: 24px; padding: 0 4px; cursor: pointer; }
+
+/* Utilities */
+.hidden { display: none !important; }
 </style>
 </head>
 <body>
 <div class="app" id="app">
-<aside class="side">
-<div class="side-head">
-<div class="logo">AR</div>
-<div style="flex:1"><h1>AR Tours</h1><div class="sub">Inbox</div></div>
-<button class="icon-btn" id="bellBtn" title="Notifications">🔔</button>
-<button class="icon-btn" id="newMsgBtn" title="Message a new customer">+</button>
-</div>
-<div class="install-banner" id="installBanner">
-<div class="txt">Install AR Tours Inbox<small>Add to your home screen for quick access + notifications</small></div>
-<button id="installBtn">Install</button>
-<button class="dismiss" id="installDismiss">×</button>
-</div>
-<div class="search"><input id="search" placeholder="Search chats..." /></div>
-<div class="convos" id="convos"></div>
-</aside>
-<main class="chat">
-<div id="chatHead" class="chat-head" style="display:none">
-<button class="back-btn" id="backBtn">←</button>
-<div class="avatar" id="chAvatar"></div>
-<div class="info"><div class="n" id="chName"></div><div class="s" id="chPhone"></div></div>
-<button class="handled-btn" id="handledBtn" style="display:none">✓ Handled</button>
-<span class="status-pill" id="chStatus"></span>
-</div>
-<div id="bokunCard"></div>
-<div class="msgs" id="msgs"><div class="empty"><div class="big">💬</div><div><b>AR Tours Inbox</b></div><div>Select a conversation to start replying.</div></div></div>
-<div id="warn" class="warn" style="display:none"></div>
-<div class="quick" id="quick" style="display:none">
-<button data-q="Thanks for reaching out to AR Tours! How can we help with your trip? 😊">👋 Greeting</button>
-<button data-q="Could you share your travel dates, number of travellers, and pickup location so we can prepare a quote?">📋 Ask details</button>
-<button data-q="Thank you! Our team will prepare the best options and confirm shortly. 🙏">✅ Wrap up</button>
-</div>
-<div id="composer" class="composer" style="display:none">
-<input id="input" placeholder="Type a message..." />
-<button id="send">➤</button>
-</div>
-</main>
+  <!-- Sidebar -->
+  <aside class="side">
+    <div class="side-head">
+      <div class="logo">AR</div>
+      <div class="brand-text"><h1>AR Tours</h1><div class="sub">Inbox</div></div>
+      <button class="icon-btn" id="bcstBtn" title="Broadcast Message">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+      </button>
+      <button class="icon-btn" id="bellBtn" title="Notifications">🔔</button>
+      <button class="icon-btn" id="newMsgBtn" title="New Chat">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+      </button>
+    </div>
+    <div class="install-banner" id="installBanner">
+      <div class="txt">Install App<small>Add to home screen for notifications</small></div>
+      <button id="installBtn">Install</button>
+      <button class="dismiss" id="installDismiss">×</button>
+    </div>
+    <div class="search">
+      <div class="search-box">
+        <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+        <input id="search" placeholder="Search or start new chat" />
+      </div>
+    </div>
+    <div class="convos" id="convos"></div>
+  </aside>
+
+  <!-- Main Area (Chat + Info) -->
+  <div class="main-area">
+    <!-- Chat Panel -->
+    <main class="chat">
+      <div class="chat-bg"></div>
+      <div id="chatHead" class="chat-head" style="display:none">
+        <button class="back-btn" id="backBtn">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+        </button>
+        <div class="avatar" id="chAvatar" onclick="toggleInfo()"></div>
+        <div class="info" onclick="toggleInfo()">
+          <div class="n" id="chName"></div>
+          <div class="s" id="chPhone"></div>
+        </div>
+        <div class="header-actions">
+          <span class="status-pill" id="chStatus"></span>
+          <button class="handled-btn" id="handledBtn" style="display:none">✓ Handled</button>
+        </div>
+      </div>
+      <div id="bokunCard"></div>
+      <div class="msgs" id="msgs">
+        <div class="empty">
+          <div class="big">💬</div>
+          <div><b style="font-size:20px;color:var(--ink)">WhatsApp Web</b></div>
+          <div class="empty-text">Send and receive messages without keeping your phone online. Use WhatsApp on up to 4 linked devices and 1 phone at the same time.</div>
+        </div>
+      </div>
+      <div id="warn" class="warn" style="display:none"></div>
+      <div class="quick" id="quick" style="display:none">
+        <button data-q="Thanks for reaching out to AR Tours! How can we help with your trip? 😊">👋 Greeting</button>
+        <button data-q="Could you share your travel dates, number of travellers, and pickup location so we can prepare a quote?">📋 Ask details</button>
+        <button data-q="Thank you! Our team will prepare the best options and confirm shortly. 🙏">✅ Wrap up</button>
+      </div>
+      <div id="composer" class="composer" style="display:none">
+        <input id="input" placeholder="Type a message" autocomplete="off" />
+        <button id="send">
+          <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+        </button>
+      </div>
+    </main>
+
+    <!-- Contact Info Panel (New) -->
+    <aside class="contact-info" id="contactInfo">
+      <div class="ci-header">
+        <button class="ci-close" id="ciClose">×</button>
+        <h2 style="font-size:16px;font-weight:600">Contact info</h2>
+      </div>
+      <div class="ci-profile">
+        <div class="avatar" id="ciAvatar" style="width:160px;height:160px;font-size:48px;margin-bottom:20px"></div>
+        <div class="ci-name" id="ciName"></div>
+        <div class="ci-phone" id="ciPhone"></div>
+        <div class="ci-actions">
+          <button class="ci-btn" id="ciCallBtn"><div class="ci-btn-icon">📞</div>Call</button>
+          <button class="ci-btn" id="ciMailBtn"><div class="ci-btn-icon">✉️</div>Email</button>
+        </div>
+      </div>
+      <div class="ci-section">
+        <div class="ci-title">About</div>
+        <div class="ci-item">
+          <div class="ci-label">Status</div>
+          <div class="ci-value" id="ciStatus">Active Customer</div>
+        </div>
+      </div>
+      <div class="ci-section" id="ciTourSection" style="display:none">
+        <div class="ci-title">Tour Interest</div>
+        <div id="ciBokunData"></div>
+      </div>
+      <div class="ci-section">
+        <div class="ci-title">Tags</div>
+        <div class="tags" id="ciTags"></div>
+      </div>
+    </aside>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
 <!-- New message modal -->
 <div id="newMsgModal" class="modal-overlay">
-<div class="modal">
-<h2>New message</h2>
-<div class="desc">To message someone who hasn't texted you yet, WhatsApp requires an approved template — free text isn't allowed for a first contact.</div>
-<label class="field-label">Phone (with country code, no +)</label>
-<input id="nmPhone" class="field" placeholder="61491234567">
-<label class="field-label">Customer name (for inbox record)</label>
-<input id="nmName" class="field" placeholder="Sarah">
-<label class="field-label">Send from</label>
-<select id="nmFrom" class="field">
-<option value="main">+61 400 044 004 (main)</option>
-<option value="second">+61 400 040 243</option>
-</select>
-<label class="field-label">Template</label>
-<select id="nmTemplate" class="field">
-<option value="inquiry_followup">inquiry_followup — "Hi {{1}}, following up on your {{2}} interest..."</option>
-</select>
-<label class="field-label">{{1}} First name</label>
-<input id="nmVar1" class="field" placeholder="Sarah">
-<label class="field-label">{{2}} Tour name</label>
-<input id="nmVar2" class="field" placeholder="Great Ocean Road" style="margin-bottom:4px">
-<div id="nmWarn" class="alert-box"></div>
-<div class="modal-actions">
-<button id="nmCancel" class="btn-secondary">Cancel</button>
-<button id="nmSend" class="btn-primary">Send</button>
+  <div class="modal">
+    <h2>New Chat</h2>
+    <div class="desc">To message someone who hasn't texted you yet, WhatsApp requires an approved template.</div>
+    <label class="field-label">Phone Number (with country code, no +)</label>
+    <input id="nmPhone" class="field" placeholder="e.g. 61491234567">
+    <label class="field-label">Customer Name</label>
+    <input id="nmName" class="field" placeholder="Optional">
+    <label class="field-label">Send From</label>
+    <select id="nmFrom" class="field">
+      <option value="main">+61 400 044 004 (Main)</option>
+      <option value="second">+61 400 040 243</option>
+    </select>
+    <label class="field-label">Template</label>
+    <select id="nmTemplate" class="field">
+      <option value="inquiry_followup">inquiry_followup — "Hi {{1}}, following up on your {{2}} interest..."</option>
+    </select>
+    <label class="field-label">{{1}} First Name</label>
+    <input id="nmVar1" class="field" placeholder="e.g. Sarah">
+    <label class="field-label">{{2}} Tour Name</label>
+    <input id="nmVar2" class="field" placeholder="e.g. Great Ocean Road">
+    <div id="nmWarn" class="alert-box"></div>
+    <div class="modal-actions">
+      <button id="nmCancel" class="btn-secondary">Cancel</button>
+      <button id="nmSend" class="btn-primary">Send Message</button>
+    </div>
+  </div>
 </div>
-</div>
+
+<!-- Broadcast modal (NEW) -->
+<div id="bcstModal" class="modal-overlay">
+  <div class="modal">
+    <h2>Broadcast Template</h2>
+    <div class="desc">Send a template message to multiple numbers at once.</div>
+    <label class="field-label">Phone Numbers (comma separated)</label>
+    <textarea id="bcstPhones" class="field" placeholder="61412345678, 61498765432"></textarea>
+    <label class="field-label">Send From</label>
+    <select id="bcstFrom" class="field">
+      <option value="main">+61 400 044 004 (Main)</option>
+      <option value="second">+61 400 040 243</option>
+    </select>
+    <label class="field-label">Template</label>
+    <select id="bcstTemplate" class="field">
+      <option value="inquiry_followup">inquiry_followup</option>
+    </select>
+    <label class="field-label">Variable {{1}} (First Name fallback)</label>
+    <input id="bcstVar1" class="field" placeholder="there">
+    <label class="field-label">Variable {{2}} (Tour Name)</label>
+    <input id="bcstVar2" class="field" placeholder="Tour">
+    <div id="bcstWarn" class="alert-box"></div>
+    <div class="modal-actions">
+      <button id="bcstCancel" class="btn-secondary">Cancel</button>
+      <button id="bcstSend" class="btn-primary">Send Broadcast</button>
+    </div>
+  </div>
 </div>
 
 <!-- Notifications modal -->
 <div id="bellModal" class="modal-overlay">
-<div class="modal">
-<h2>Push notifications</h2>
-<div class="desc" id="bellDesc">Get notified the moment a customer messages you, even when the inbox isn't open.</div>
-<div class="modal-actions">
-<button id="bellCancel" class="btn-secondary">Close</button>
-<button id="bellToggle" class="btn-primary">Enable</button>
-</div>
-</div>
+  <div class="modal">
+    <h2>Push Notifications</h2>
+    <div class="desc" id="bellDesc">Get notified the moment a customer messages you, even when the inbox isn't open.</div>
+    <div class="modal-actions">
+      <button id="bellCancel" class="btn-secondary">Close</button>
+      <button id="bellToggle" class="btn-primary">Enable</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -241,320 +594,436 @@ let cur=null, allConvos=[];
 let seen={};
 try{seen=JSON.parse(localStorage.getItem('ar_inbox_seen')||'{}');}catch(e){seen={};}
 function saveSeen(){try{localStorage.setItem('ar_inbox_seen',JSON.stringify(seen));}catch(e){}}
+
 const initials=n=>{if(!n)return'?';const p=n.trim().split(/\s+/);return (p[0][0]+(p[1]?p[1][0]:'')).toUpperCase();};
 const esc=s=>{const d=document.createElement('div');d.innerText=s||'';return d.innerHTML;};
 const fmtTime=t=>t?new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
-const fmtDay=t=>{const d=new Date(t),n=new Date();if(d.toDateString()===n.toDateString())return'Today';const y=new Date(n);y.setDate(n.getDate()-1);if(d.toDateString()===y.toDateString())return'Yesterday';return d.toLocaleDateString([], {day:'numeric',month:'short',year:'numeric'});};
+const fmtDay=t=>{
+  const d=new Date(t),n=new Date();
+  if(d.toDateString()===n.toDateString())return'Today';
+  const y=new Date(n);y.setDate(n.getDate()-1);
+  if(d.toDateString()===y.toDateString())return'Yesterday';
+  const diff=Math.floor((n-d)/(1000*60*60*24));
+  if(diff<7) return d.toLocaleDateString([], {weekday:'long'});
+  return d.toLocaleDateString([], {day:'numeric',month:'short',year:'numeric'});
+};
+const relTime=t=>{
+  if(!t)return'';
+  const d=new Date(t),n=new Date(), diffMs=n-d;
+  const diffMins=Math.floor(diffMs/60000);
+  if(diffMins<1) return 'Just now';
+  if(diffMins<60) return diffMins+'m ago';
+  const diffHrs=Math.floor(diffMins/60);
+  if(diffHrs<24) return diffHrs+'h ago';
+  if(d.toDateString()===new Date(n.setDate(n.getDate()-1)).toDateString()) return 'Yesterday';
+  return d.toLocaleDateString([], {day:'numeric',month:'short'});
+};
 const fmtSize=(b)=>b<1024?b+'B':b<1024*1024?(b/1024).toFixed(1)+'KB':(b/(1024*1024)).toFixed(1)+'MB';
 
 function toast(msg){
-const t=document.getElementById('toast');t.innerText=msg;t.classList.add('show');
-clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2600);
+  const t=document.getElementById('toast');t.innerText=msg;t.classList.add('show');
+  clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2600);
 }
 
+function toggleInfo() {
+  document.getElementById('app').classList.toggle('show-info');
+}
+document.getElementById('ciClose').onclick = () => { document.getElementById('app').classList.remove('show-info'); };
+
 async function loadConvos(){
-const r=await fetch('/inbox/api/conversations');if(!r.ok)return;
-allConvos=await r.json();
-if(cur){const c=allConvos.find(x=>x.phone===cur);if(c && seen[cur]!==c.lastAt){seen[cur]=c.lastAt;saveSeen();}}
-render();
+  const r=await fetch('/inbox/api/conversations');if(!r.ok)return;
+  allConvos=await r.json();
+  if(cur){const c=allConvos.find(x=>x.phone===cur);if(c && seen[cur]!==c.lastAt){seen[cur]=c.lastAt;saveSeen();}}
+  render();
 }
 
 function render(){
-const q=(document.getElementById('search').value||'').toLowerCase();
-const list=document.getElementById('convos');list.innerHTML='';
-
-let filtered=allConvos.filter(c=>!q||(c.name||'').toLowerCase().includes(q)||c.phone.includes(q));
-filtered.sort((a,b)=>{
-if((!!b.needsHuman) - (!!a.needsHuman)!==0) return (b.needsHuman?1:0)-(a.needsHuman?1:0);
-return (b.lastAt||'').localeCompare(a.lastAt||'');
-});
-
-const needHuman=filtered.filter(c=>c.needsHuman);
-const rest=filtered.filter(c=>!c.needsHuman);
-
-function renderRow(c){
-const unread=seen[c.phone]!==c.lastAt && c.phone!==cur;
-const d=document.createElement('div');
-d.className='convo'+(c.phone===cur?' active':'')+(c.needsHuman?' needs-human':'');
-let tags='';
-if(c.needsHuman) tags+='<span class="tag tag-human">🙋 Needs you</span>';
-if(c.tour && c.tour.tourName) tags+=`<span class="tag tag-tour">${esc(c.tour.tourName.slice(0,22))}${c.tour.pax?' · '+c.tour.pax+'p':''}</span>`;
-d.innerHTML=`<div class="avatar">${esc(initials(c.name||c.phone))}${c.needsHuman?'<span class="dot"></span>':''}</div>
-<div class="convo-body"><div class="convo-top"><span class="convo-name">${esc(c.name||c.phone)}</span><span class="convo-time">${fmtTime(c.lastAt)}</span></div>
-<div class="convo-prev"><span>${esc((c.preview||'').slice(0,40))}</span>${unread?'<span class="unread-dot"></span>':''}</div>
-${tags?`<div class="tags">${tags}</div>`:''}</div>`;
-d.onclick=()=>openChat(c.phone,c.name);
-list.appendChild(d);
-}
-
-if(needHuman.length){
-const lbl=document.createElement('div');lbl.className='section-label';lbl.innerText='Needs you';list.appendChild(lbl);
-needHuman.forEach(renderRow);
-}
-if(rest.length){
-if(needHuman.length){const lbl=document.createElement('div');lbl.className='section-label';lbl.innerText='All chats';list.appendChild(lbl);}
-rest.forEach(renderRow);
-}
-if(!filtered.length){
-const empty=document.createElement('div');empty.style.padding='30px 16px';empty.style.color='var(--muted)';empty.style.textAlign='center';empty.innerText='No conversations yet.';list.appendChild(empty);
-}
+  const q=(document.getElementById('search').value||'').toLowerCase();
+  const list=document.getElementById('convos');list.innerHTML='';
+  
+  let filtered=allConvos.filter(c=>!q||(c.name||'').toLowerCase().includes(q)||c.phone.includes(q));
+  filtered.sort((a,b)=>{
+    if((!!b.needsHuman) - (!!a.needsHuman)!==0) return (b.needsHuman?1:0)-(a.needsHuman?1:0);
+    return (b.lastAt||'').localeCompare(a.lastAt||'');
+  });
+  
+  const needHuman=filtered.filter(c=>c.needsHuman);
+  const rest=filtered.filter(c=>!c.needsHuman);
+  
+  function renderRow(c){
+    const unread=seen[c.phone]!==c.lastAt && c.phone!==cur;
+    const d=document.createElement('div');
+    d.className='convo'+(c.phone===cur?' active':'')+(c.needsHuman?' needs-human':'');
+    
+    let tags='';
+    if(c.needsHuman) tags+='<span class="tag tag-human">🙋 Needs you</span>';
+    if(c.tour && c.tour.tourName) tags+=`<span class="tag tag-tour">${esc(c.tour.tourName.slice(0,22))}${c.tour.pax?' · '+c.tour.pax+'p':''}</span>`;
+    
+    const isOut = c.lastDir === 'outbound';
+    
+    d.innerHTML=`
+      <div class="avatar">${esc(initials(c.name||c.phone))}${c.needsHuman?'<span class="dot"></span>':''}</div>
+      <div class="convo-body">
+        <div class="convo-top">
+          <span class="convo-name">${esc(c.name||c.phone)}</span>
+          <span class="convo-time">${relTime(c.lastAt)}</span>
+        </div>
+        <div class="convo-prev">
+          <span class="convo-prev-text">${isOut ? '<span class="sender-you">You:</span> ' : ''}${esc((c.preview||'').slice(0,50))}</span>
+          ${unread?'<span class="unread-dot"></span>':''}
+        </div>
+        ${tags?`<div class="tags">${tags}</div>`:''}
+      </div>`;
+    d.onclick=()=>openChat(c.phone,c.name);
+    list.appendChild(d);
+  }
+  
+  if(needHuman.length){
+    const lbl=document.createElement('div');lbl.className='section-label needs-attention';lbl.innerText='Needs Attention';list.appendChild(lbl);
+    needHuman.forEach(renderRow);
+  }
+  if(rest.length){
+    if(needHuman.length){const lbl=document.createElement('div');lbl.className='section-label';lbl.innerText='All Chats';list.appendChild(lbl);}
+    rest.forEach(renderRow);
+  }
+  if(!filtered.length){
+    const empty=document.createElement('div');empty.style.padding='40px 20px';empty.style.color='var(--muted)';empty.style.textAlign='center';empty.innerText='No conversations found.';list.appendChild(empty);
+  }
 }
 
 async function openChat(phone,name){
-cur=phone;const c=allConvos.find(x=>x.phone===phone);if(c){seen[phone]=c.lastAt;saveSeen();}
-document.getElementById('app').classList.add('show-chat');
-document.getElementById('chatHead').style.display='flex';
-document.getElementById('composer').style.display='flex';
-document.getElementById('quick').style.display='flex';
-document.getElementById('chAvatar').innerText=initials(name||phone);
-document.getElementById('chName').innerText=name||phone;
-document.getElementById('chPhone').innerText='+'+phone;
-await loadBokunCard(phone);
-await loadMsgs();
-render();
-document.getElementById('input').focus();
+  cur=phone;const c=allConvos.find(x=>x.phone===phone);if(c){seen[phone]=c.lastAt;saveSeen();}
+  document.getElementById('app').classList.add('show-chat');
+  document.getElementById('chatHead').style.display='flex';
+  document.getElementById('composer').style.display='flex';
+  document.getElementById('quick').style.display='flex';
+  
+  const displayName = name||phone;
+  document.getElementById('chAvatar').innerText=initials(displayName);
+  document.getElementById('chName').innerText=displayName;
+  document.getElementById('chPhone').innerText='+'+phone;
+  
+  // Populate contact info
+  document.getElementById('ciAvatar').innerText=initials(displayName);
+  document.getElementById('ciName').innerText=displayName;
+  document.getElementById('ciPhone').innerText='+'+phone;
+  
+  let ciTags = '';
+  if(c && c.needsHuman) ciTags+='<span class="tag tag-human">🙋 Needs you</span> ';
+  if(c && c.tour && c.tour.tourName) ciTags+=`<span class="tag tag-tour">${esc(c.tour.tourName)}</span>`;
+  document.getElementById('ciTags').innerHTML = ciTags || '<span class="ci-label">No tags</span>';
+  
+  await loadBokunCard(phone);
+  await loadMsgs();
+  render();
+  setTimeout(()=>document.getElementById('input').focus(), 100);
 }
 
 async function loadBokunCard(phone){
-const holder=document.getElementById('bokunCard');holder.innerHTML='';
-try{
-const r=await fetch('/inbox/api/conversations/'+phone+'/bokun-bookings');
-if(!r.ok)return;
-const bookings=await r.json();
-if(!bookings || !bookings.length) return;
-const b=bookings[0];
-const card=document.createElement('div');card.className='bokun-card';
-card.innerHTML=`<div class="bt">📅 Bokun Booking</div>
-<div class="bn">${esc(b.tourName||'Tour')}</div>
-<div class="bd">${b.date?esc(b.date):'Date TBC'}${b.pax?' · '+esc(String(b.pax))+' pax':''}${b.price?' · $'+esc(String(b.price))+' '+esc(b.currency||'AUD'):''}</div>
-<span class="bstatus">${esc(b.status||'confirmed')}</span>`;
-holder.appendChild(card);
-}catch(e){/* best-effort, ignore */}
+  const holder=document.getElementById('bokunCard');holder.innerHTML='';
+  const ciBokun=document.getElementById('ciBokunData');ciBokun.innerHTML='';
+  const ciTourSec=document.getElementById('ciTourSection');ciTourSec.style.display='none';
+  
+  try{
+    const r=await fetch('/inbox/api/conversations/'+phone+'/bokun-bookings');
+    if(!r.ok)return;
+    const bookings=await r.json();
+    if(!bookings || !bookings.length) return;
+    const b=bookings[0];
+    
+    // Header card
+    const card=document.createElement('div');card.className='bokun-card';
+    card.innerHTML=`<div class="bt">📅 Bokun Booking</div>
+    <div class="bn">${esc(b.tourName||'Tour')}</div>
+    <div class="bd">${b.date?esc(b.date):'Date TBC'}${b.pax?' · '+esc(String(b.pax))+' pax':''}${b.price?' · $'+esc(String(b.price))+' '+esc(b.currency||'AUD'):''}</div>
+    <span class="bstatus">${esc(b.status||'confirmed')}</span>`;
+    holder.appendChild(card);
+    
+    // Contact Info card
+    ciTourSec.style.display='block';
+    ciBokun.innerHTML=`
+      <div class="ci-item"><div class="ci-label">Tour</div><div class="ci-value">${esc(b.tourName||'-')}</div></div>
+      <div class="ci-item"><div class="ci-label">Date</div><div class="ci-value">${esc(b.date||'-')}</div></div>
+      <div class="ci-item"><div class="ci-label">Pax</div><div class="ci-value">${esc(String(b.pax||'-'))}</div></div>
+      <div class="ci-item"><div class="ci-label">Status</div><div class="ci-value" style="color:var(--accent);font-weight:600">${esc(b.status||'confirmed')}</div></div>
+    `;
+  }catch(e){/* ignore */}
 }
 
 async function loadMsgs(){
-if(!cur)return;const r=await fetch('/inbox/api/conversations/'+cur+'/messages');const ms=await r.json();
-const box=document.getElementById('msgs');box.innerHTML='';let lastDay='';
-ms.forEach(m=>{
-const day=fmtDay(m.at);if(day!==lastDay){const s=document.createElement('div');s.className='daysep';s.innerText=day;box.appendChild(s);lastDay=day;}
-const b=document.createElement('div');
-if(m.media && m.media.length>0){
-m.media.forEach(med=>{
-const mb=document.createElement('div');mb.className='bubble media-bubble '+(m.dir==='inbound'?'in':'out');
-if(['image','jpeg','jpg','png'].some(t=>med.mime.includes(t))){
-const img=document.createElement('img');img.className='media-img';img.src='/inbox/api/media/'+med.id;img.alt='Image';mb.appendChild(img);
-}else{
-const icon={'document':'📄','audio':'🔊','video':'🎥','file':'📎'}[med.type]||'📎';
-const mf=document.createElement('div');mf.className='media-file';
-mf.innerHTML=`<div class="media-icon">${icon}</div>
-<div class="media-info"><div class="media-name"><a class="media-link" href="/inbox/api/media/${med.id}" download="${esc(med.filename)}">${esc(med.filename)}</a></div>
-<div class="media-size">${fmtSize(med.size)}</div></div>`;
-mb.appendChild(mf);
-}
-const ts=document.createElement('span');ts.className='meta';ts.innerText=fmtTime(m.at)+(m.dir==='outbound'?' ✓✓':'');mb.appendChild(ts);
-box.appendChild(mb);
-});
-}else{
-b.className='bubble '+(m.dir==='inbound'?'in':'out');
-b.innerHTML=esc(m.body)+`<span class="meta">${fmtTime(m.at)}${m.dir==='outbound'?' ✓✓':''}</span>`;box.appendChild(b);
-}
-});
-const wr=await fetch('/inbox/api/conversations/'+cur+'/window').then(r=>r.json()).catch(()=>({open:true}));
-const convo=allConvos.find(c=>c.phone===cur);
-const pill=document.getElementById('chStatus');
-const handledBtn=document.getElementById('handledBtn');
-if(convo && convo.needsHuman){
-pill.className='status-pill pill-human';pill.innerText='🙋 Needs you';
-handledBtn.style.display='inline-block';
-}else if(wr.open){
-pill.className='status-pill pill-open';pill.innerText='● Open';
-handledBtn.style.display='none';
-}else{
-pill.className='status-pill pill-closed';pill.innerText='● 24h closed';
-handledBtn.style.display='none';
-}
-if(!wr.open){document.getElementById('warn').style.display='block';document.getElementById('warn').innerText='This customer has not messaged in the last 24 hours. WhatsApp blocks free-text replies now — an approved template is required.';}
-else{document.getElementById('warn').style.display='none';}
-box.scrollTop=box.scrollHeight;
+  if(!cur)return;const r=await fetch('/inbox/api/conversations/'+cur+'/messages');const ms=await r.json();
+  const box=document.getElementById('msgs');box.innerHTML='';let lastDay='';
+  
+  if(ms.length===0){
+    box.innerHTML=`<div class="empty"><div class="big">👋</div><div>Say hi to start the conversation!</div></div>`;
+  }
+  
+  ms.forEach(m=>{
+    const day=fmtDay(m.at);if(day!==lastDay){const s=document.createElement('div');s.className='daysep';s.innerText=day;box.appendChild(s);lastDay=day;}
+    const b=document.createElement('div');
+    const isOut = m.dir==='outbound';
+    
+    if(m.media && m.media.length>0){
+      m.media.forEach(med=>{
+        const mb=document.createElement('div');mb.className='bubble media-bubble '+(isOut?'out':'in');
+        if(['image','jpeg','jpg','png'].some(t=>med.mime.includes(t))){
+          const img=document.createElement('img');img.className='media-img';img.src='/inbox/api/media/'+med.id;img.alt='Image';mb.appendChild(img);
+        }else{
+          const icon={'document':'📄','audio':'🔊','video':'🎥','file':'📎'}[med.type]||'📎';
+          const mf=document.createElement('div');mf.className='media-file';
+          mf.innerHTML=`<div class="media-icon">${icon}</div>
+          <div class="media-info"><div class="media-name"><a class="media-link" href="/inbox/api/media/${med.id}" download="${esc(med.filename)}">${esc(med.filename)}</a></div>
+          <div class="media-size">${fmtSize(med.size)}</div></div>`;
+          mb.appendChild(mf);
+        }
+        const ts=document.createElement('span');ts.className='meta';
+        ts.innerHTML=`${fmtTime(m.at)}${isOut?'<span class="ticks">✓✓</span>':''}`;
+        mb.appendChild(ts);
+        box.appendChild(mb);
+      });
+    }else{
+      b.className='bubble '+(isOut?'out':'in');
+      b.innerHTML=`<span class="msg-content">${esc(m.body)}</span><span class="meta">${fmtTime(m.at)}${isOut?'<span class="ticks">✓✓</span>':''}</span>`;
+      box.appendChild(b);
+    }
+  });
+  
+  const wr=await fetch('/inbox/api/conversations/'+cur+'/window').then(r=>r.json()).catch(()=>({open:true}));
+  const convo=allConvos.find(c=>c.phone===cur);
+  const pill=document.getElementById('chStatus');
+  const handledBtn=document.getElementById('handledBtn');
+  
+  if(convo && convo.needsHuman){
+    pill.className='status-pill pill-human';pill.innerText='🙋 Needs you';
+    handledBtn.style.display='inline-block';
+  }else if(wr.open){
+    pill.className='status-pill pill-open';pill.innerText='● Open (24h)';
+    handledBtn.style.display='none';
+  }else{
+    pill.className='status-pill pill-closed';pill.innerText='● Closed';
+    handledBtn.style.display='none';
+  }
+  
+  const warn = document.getElementById('warn');
+  const sendBtn = document.getElementById('send');
+  const inp = document.getElementById('input');
+  
+  if(!wr.open){
+    warn.style.display='block';
+    warn.innerText='24h window closed. WhatsApp requires an approved template for new messages.';
+    sendBtn.disabled=true;
+    inp.disabled=true;
+    inp.placeholder='Session expired...';
+  }else{
+    warn.style.display='none';
+    sendBtn.disabled=false;
+    inp.disabled=false;
+    inp.placeholder='Type a message';
+  }
+  
+  box.scrollTop=box.scrollHeight;
 }
 
 document.getElementById('handledBtn').onclick=async()=>{
-if(!cur)return;
-const btn=document.getElementById('handledBtn');btn.disabled=true;
-try{
-await fetch('/inbox/api/conversations/'+cur+'/mark-handled',{method:'POST'});
-toast('Marked as handled ✓');
-await loadConvos();await loadMsgs();
-}catch(e){toast('Could not update — try again.');}
-finally{btn.disabled=false;}
+  if(!cur)return;
+  const btn=document.getElementById('handledBtn');btn.disabled=true;
+  try{
+    await fetch('/inbox/api/conversations/'+cur+'/mark-handled',{method:'POST'});
+    toast('Marked as handled ✓');
+    await loadConvos();await loadMsgs();
+  }catch(e){toast('Could not update — try again.');}
+  finally{btn.disabled=false;}
 };
 
 async function send(){
-const i=document.getElementById('input');const body=i.value.trim();if(!body||!cur)return;
-const btn=document.getElementById('send');btn.disabled=true;
-try{const r=await fetch('/inbox/api/conversations/'+cur+'/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body})});
-const d=await r.json();
-if(!r.ok){document.getElementById('warn').style.display='block';document.getElementById('warn').innerText=d.message||'Could not send.';}
-else{i.value='';await loadMsgs();await loadConvos();}
-}catch(e){toast('Network error — message not sent.');}finally{btn.disabled=false;i.focus();}
+  const i=document.getElementById('input');const body=i.value.trim();if(!body||!cur)return;
+  const btn=document.getElementById('send');btn.disabled=true;
+  try{
+    const r=await fetch('/inbox/api/conversations/'+cur+'/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body})});
+    const d=await r.json();
+    if(!r.ok){
+      document.getElementById('warn').style.display='block';
+      document.getElementById('warn').innerText=d.message||'Could not send.';
+    }else{
+      i.value='';
+      await loadMsgs();await loadConvos();
+    }
+  }catch(e){toast('Network error — message not sent.');}
+  finally{btn.disabled=false;i.focus();}
 }
 
 document.getElementById('send').onclick=send;
 document.getElementById('input').addEventListener('keydown',e=>{if(e.key==='Enter')send();});
 document.getElementById('search').addEventListener('input',render);
-document.getElementById('backBtn').addEventListener('click',()=>{document.getElementById('app').classList.remove('show-chat');cur=null;render();});
-document.querySelectorAll('.quick button').forEach(b=>b.onclick=()=>{document.getElementById('input').value=b.dataset.q;document.getElementById('input').focus();});
+document.getElementById('backBtn').addEventListener('click',()=>{
+  document.getElementById('app').classList.remove('show-chat','show-info');
+  cur=null;render();
+});
+document.querySelectorAll('.quick button').forEach(b=>b.onclick=()=>{
+  const i = document.getElementById('input');
+  if(!i.disabled) { i.value=b.dataset.q; i.focus(); }
+});
 
 loadConvos();
 setInterval(()=>{loadConvos();if(cur)loadMsgs();},5000);
 
-// Deep link support: a tapped push notification navigates to /inbox?open=<phone>
+// Deep link
 const params=new URLSearchParams(location.search);
 const openPhone=params.get('open');
 if(openPhone){
-loadConvos().then(()=>{
-const c=allConvos.find(x=>x.phone===openPhone);
-openChat(openPhone, c?c.name:openPhone);
-});
+  loadConvos().then(()=>{
+    const c=allConvos.find(x=>x.phone===openPhone);
+    openChat(openPhone, c?c.name:openPhone);
+  });
 }
 
-// ===== New message modal =====
-const nmModal=document.getElementById('newMsgModal');
-document.getElementById('newMsgBtn').onclick=()=>{
-document.getElementById('nmPhone').value='';
-document.getElementById('nmName').value='';
-document.getElementById('nmVar1').value='';
-document.getElementById('nmVar2').value='';
-document.getElementById('nmWarn').style.display='none';
-nmModal.classList.add('show');
-document.getElementById('nmPhone').focus();
-};
-document.getElementById('nmCancel').onclick=()=>{nmModal.classList.remove('show');};
-nmModal.addEventListener('click',e=>{if(e.target===nmModal)nmModal.classList.remove('show');});
+// ===== Modals Logic =====
+function setupModal(modalId, btnId, cancelId) {
+  const mod=document.getElementById(modalId);
+  if(btnId) document.getElementById(btnId).onclick=()=>mod.classList.add('show');
+  if(cancelId) document.getElementById(cancelId).onclick=()=>mod.classList.remove('show');
+  mod.addEventListener('click',e=>{if(e.target===mod)mod.classList.remove('show');});
+  return mod;
+}
+
+const nmModal = setupModal('newMsgModal', 'newMsgBtn', 'nmCancel');
+const bcstModal = setupModal('bcstModal', 'bcstBtn', 'bcstCancel');
 
 document.getElementById('nmSend').onclick=async()=>{
-const phone=document.getElementById('nmPhone').value.trim().replace(/[^0-9]/g,'');
-const name=document.getElementById('nmName').value.trim();
-const template=document.getElementById('nmTemplate').value;
-const from=document.getElementById('nmFrom').value;
-const v1=document.getElementById('nmVar1').value.trim();
-const v2=document.getElementById('nmVar2').value.trim();
-const warn=document.getElementById('nmWarn');
-if(!phone){warn.style.display='block';warn.innerText='Enter a phone number.';return;}
-const btn=document.getElementById('nmSend');btn.disabled=true;btn.innerText='Sending...';
-try{
-const r=await fetch('/inbox/api/send-template',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,name,template,language:'en',params:[v1,v2],from})});
-const d=await r.json();
-if(!r.ok){warn.style.display='block';warn.innerText=d.message||'Could not send. Check the template is approved in Meta WhatsApp Manager.';}
-else{nmModal.classList.remove('show');await loadConvos();openChat(phone,name||phone);}
-}catch(e){warn.style.display='block';warn.innerText='Network error.';}
-finally{btn.disabled=false;btn.innerText='Send';}
+  const phone=document.getElementById('nmPhone').value.trim().replace(/[^0-9]/g,'');
+  const name=document.getElementById('nmName').value.trim();
+  const template=document.getElementById('nmTemplate').value;
+  const from=document.getElementById('nmFrom').value;
+  const v1=document.getElementById('nmVar1').value.trim();
+  const v2=document.getElementById('nmVar2').value.trim();
+  const warn=document.getElementById('nmWarn');
+  
+  if(!phone){warn.style.display='block';warn.innerText='Enter a phone number.';return;}
+  const btn=document.getElementById('nmSend');btn.disabled=true;btn.innerText='Sending...';
+  
+  try{
+    const r=await fetch('/inbox/api/send-template',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,name,template,language:'en',params:[v1,v2],from})});
+    const d=await r.json();
+    if(!r.ok){warn.style.display='block';warn.innerText=d.message||'Failed to send.';}
+    else{nmModal.classList.remove('show');await loadConvos();openChat(phone,name||phone);toast('Message sent ✓');}
+  }catch(e){warn.style.display='block';warn.innerText='Network error.';}
+  finally{btn.disabled=false;btn.innerText='Send Message';}
 };
 
-// ===== PWA: install prompt =====
+document.getElementById('bcstSend').onclick=async()=>{
+  const phones=document.getElementById('bcstPhones').value.split(',').map(s=>s.trim().replace(/[^0-9]/g,'')).filter(Boolean);
+  const template=document.getElementById('bcstTemplate').value;
+  const from=document.getElementById('bcstFrom').value;
+  const v1=document.getElementById('bcstVar1').value.trim();
+  const v2=document.getElementById('bcstVar2').value.trim();
+  const warn=document.getElementById('bcstWarn');
+  
+  if(!phones.length){warn.style.display='block';warn.innerText='Enter at least one valid phone number.';return;}
+  
+  const btn=document.getElementById('bcstSend');btn.disabled=true;
+  warn.style.display='block'; warn.style.background='var(--panel-hover)'; warn.style.color='var(--ink)';
+  
+  let success=0;
+  for(let i=0; i<phones.length; i++) {
+    warn.innerText=`Sending ${i+1} of ${phones.length}...`;
+    try{
+      const r=await fetch('/inbox/api/send-template',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:phones[i],name:'',template,language:'en',params:[v1,v2],from})});
+      if(r.ok) success++;
+    }catch(e){}
+  }
+  
+  toast(`Broadcast complete: ${success}/${phones.length} sent`);
+  bcstModal.classList.remove('show');
+  btn.disabled=false; btn.innerText='Send Broadcast';
+  document.getElementById('bcstPhones').value='';
+  warn.style.display='none';
+  loadConvos();
+};
+
+// ===== PWA Install =====
 let deferredInstallPrompt=null;
 window.addEventListener('beforeinstallprompt', (e)=>{
-e.preventDefault();
-deferredInstallPrompt=e;
-if(!localStorage.getItem('ar_inbox_install_dismissed')){
-document.getElementById('installBanner').classList.add('show');
-}
+  e.preventDefault(); deferredInstallPrompt=e;
+  if(!localStorage.getItem('ar_inbox_install_dismissed')){ document.getElementById('installBanner').classList.add('show'); }
 });
 document.getElementById('installBtn').onclick=async()=>{
-if(!deferredInstallPrompt)return;
-deferredInstallPrompt.prompt();
-await deferredInstallPrompt.userChoice;
-deferredInstallPrompt=null;
-document.getElementById('installBanner').classList.remove('show');
+  if(!deferredInstallPrompt)return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt=null;
+  document.getElementById('installBanner').classList.remove('show');
 };
 document.getElementById('installDismiss').onclick=()=>{
-document.getElementById('installBanner').classList.remove('show');
-localStorage.setItem('ar_inbox_install_dismissed','1');
+  document.getElementById('installBanner').classList.remove('show');
+  localStorage.setItem('ar_inbox_install_dismissed','1');
 };
 
-// ===== PWA: service worker + push notifications =====
+// ===== Push Notifications =====
 function urlBase64ToUint8Array(base64String){
-const padding='='.repeat((4 - base64String.length % 4) % 4);
-const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');
-const raw=atob(base64);
-const arr=new Uint8Array(raw.length);
-for(let i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);
-return arr;
+  const padding='='.repeat((4 - base64String.length % 4) % 4);
+  const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');
+  const raw=atob(base64); const arr=new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);
+  return arr;
 }
 
 let swReg=null;
 async function initPush(){
-if(!('serviceWorker' in navigator)) return;
-try{
-swReg=await navigator.serviceWorker.register('/inbox/sw.js', {scope:'/inbox'});
-}catch(e){console.warn('SW registration failed', e);}
-updateBellUI();
+  if(!('serviceWorker' in navigator)) return;
+  try{ swReg=await navigator.serviceWorker.register('/inbox/sw.js', {scope:'/inbox'}); }catch(e){}
+  updateBellUI();
 }
 
 async function updateBellUI(){
-const btn=document.getElementById('bellBtn');
-if(!('Notification' in window)){btn.style.display='none';return;}
-if(Notification.permission==='granted' && swReg){
-const sub=await swReg.pushManager.getSubscription().catch(()=>null);
-btn.innerText=sub?'🔔':'🔕';
-}else{
-btn.innerText='🔕';
-}
+  const btn=document.getElementById('bellBtn');
+  if(!('Notification' in window)){btn.style.display='none';return;}
+  if(Notification.permission==='granted' && swReg){
+    const sub=await swReg.pushManager.getSubscription().catch(()=>null);
+    btn.innerHTML=sub?'🔔':'🔕';
+  }else{ btn.innerHTML='🔕'; }
 }
 
-document.getElementById('bellBtn').onclick=()=>{
-document.getElementById('bellModal').classList.add('show');
-updateBellModalUI();
-};
-document.getElementById('bellCancel').onclick=()=>{document.getElementById('bellModal').classList.remove('show');};
+const bellModal = setupModal('bellModal', 'bellBtn', 'bellCancel');
+document.getElementById('bellBtn').addEventListener('click', updateBellModalUI);
 
 async function updateBellModalUI(){
-const desc=document.getElementById('bellDesc');
-const toggleBtn=document.getElementById('bellToggle');
-if(!('Notification' in window) || !('serviceWorker' in navigator)){
-desc.innerText='Push notifications are not supported in this browser.';
-toggleBtn.style.display='none';
-return;
+  const desc=document.getElementById('bellDesc');
+  const toggleBtn=document.getElementById('bellToggle');
+  
+  if(!('Notification' in window) || !('serviceWorker' in navigator)){
+    desc.innerText='Push notifications are not supported in this browser.';
+    toggleBtn.style.display='none'; return;
+  }
+  if(Notification.permission==='denied'){
+    desc.innerText='Notifications are blocked. Enable them in browser settings.';
+    toggleBtn.style.display='none'; return;
+  }
+  
+  const sub=swReg?await swReg.pushManager.getSubscription().catch(()=>null):null;
+  if(sub){
+    desc.innerText='Notifications are on. You will be alerted when a customer messages you.';
+    toggleBtn.innerText='Turn off';
+    toggleBtn.onclick=async()=>{
+      await fetch('/inbox/api/push/unsubscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endpoint:sub.endpoint})});
+      await sub.unsubscribe();
+      bellModal.classList.remove('show');
+      updateBellUI(); toast('Notifications turned off.');
+    };
+  }else{
+    desc.innerText='Get notified the moment a customer messages you.';
+    toggleBtn.innerText='Enable Notifications';
+    toggleBtn.onclick=async()=>{
+      try{
+        const perm=await Notification.requestPermission();
+        if(perm!=='granted'){toast('Permission denied.');return;}
+        const {key}=await fetch('/inbox/api/push/vapid-public-key').then(r=>r.json());
+        const sub=await swReg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:urlBase64ToUint8Array(key) });
+        await fetch('/inbox/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sub)});
+        bellModal.classList.remove('show'); updateBellUI(); toast('Notifications enabled 🔔');
+      }catch(e){toast('Could not enable notifications.');}
+    };
+  }
 }
-if(Notification.permission==='denied'){
-desc.innerText='Notifications are blocked for this site. Enable them in your browser/app settings, then reopen this.';
-toggleBtn.style.display='none';
-return;
-}
-const sub=swReg?await swReg.pushManager.getSubscription().catch(()=>null):null;
-if(sub){
-desc.innerText='Notifications are on. You will be alerted the moment a customer messages you.';
-toggleBtn.innerText='Turn off';
-toggleBtn.onclick=async()=>{
-await fetch('/inbox/api/push/unsubscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endpoint:sub.endpoint})});
-await sub.unsubscribe();
-document.getElementById('bellModal').classList.remove('show');
-updateBellUI();
-toast('Notifications turned off.');
-};
-}else{
-desc.innerText='Get notified the moment a customer messages you, even when the inbox is not open.';
-toggleBtn.innerText='Enable';
-toggleBtn.onclick=subscribeToPush;
-}
-}
-
-async function subscribeToPush(){
-try{
-const perm=await Notification.requestPermission();
-if(perm!=='granted'){toast('Notifications permission was not granted.');return;}
-const {key}=await fetch('/inbox/api/push/vapid-public-key').then(r=>r.json());
-const sub=await swReg.pushManager.subscribe({
-userVisibleOnly:true,
-applicationServerKey:urlBase64ToUint8Array(key)
-});
-await fetch('/inbox/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sub)});
-document.getElementById('bellModal').classList.remove('show');
-updateBellUI();
-toast('Notifications enabled 🔔');
-}catch(e){console.error(e);toast('Could not enable notifications.');}
-}
-
 initPush();
 </script>
 </body>

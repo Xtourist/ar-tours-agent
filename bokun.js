@@ -1,53 +1,24 @@
 // bokun.js - Bokun booking webhook handling for AR Tours.
 //
-// Bokun sends booking events (bookings/create, bookings/update, bookings/cancel,
-// bookings/payment, bookings/refund) to a webhook URL we configure in
-// Bokun > Settings > Connections > Webhooks. Each request is HMAC-signed so we
-// can verify it actually came from Bokun before trusting it.
-//
-// We store bookings in the same JSON-file pattern as inbox.js (no new
-// infrastructure) and try to match each booking to a WhatsApp conversation by
-// phone number, so the customer's booking shows up next to their chat.
+// Bokun sends booking events to our webhook URL. Each request is HMAC-signed.
+// Bookings are persisted to Supabase ('bokun_bookings' table) with an
+// in-memory fallback so bookings survive Render restarts.
 
-const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
+const { createClient } = require('@supabase/supabase-js');
 
-const DATA_PATH = process.env.BOKUN_DATA_PATH || path.join(__dirname, 'bokun-bookings.json');
-
-// Same operator_id groundwork pattern as inbox.js.
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 const OPERATOR_ID = process.env.OPERATOR_ID || 'ar_tours';
 
-let store = { bookings: {} }; // { [bookingId]: {...booking, operatorId, phone, receivedAt} }
+const supabase = (SUPABASE_URL && SUPABASE_SECRET_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_SECRET_KEY)
+  : null;
 
-function load() {
-  try {
-    if (fs.existsSync(DATA_PATH)) {
-      store = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
-      if (!store.bookings) store.bookings = {};
-    }
-  } catch (e) {
-    console.warn('Bokun store: could not load data file, starting fresh:', e.message);
-    store = { bookings: {} };
-  }
-}
+// In-memory fallback
+let fallbackBookings = new Map();
 
-let saveTimer = null;
-function save() {
-  if (saveTimer) return;
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    try {
-      fs.writeFileSync(DATA_PATH, JSON.stringify(store));
-    } catch (e) {
-      console.warn('Bokun store: could not save data file:', e.message);
-    }
-  }, 500);
-}
-
-// Bokun signs webhook payloads with HMAC-SHA1 (secret key) in the
-// x-bokun-hmac header, over the raw request body. Reject anything that
-// doesn't match so we're not trusting arbitrary POSTs to this endpoint.
+// Bokun signs webhook payloads with HMAC-SHA1 in the x-bokun-hmac header
 function verifySignature(rawBody, signatureHeader, secretKey) {
   if (!secretKey) {
     console.warn('BOKUN_SECRET_KEY not set — skipping signature verification (not safe for production).');
@@ -58,23 +29,17 @@ function verifySignature(rawBody, signatureHeader, secretKey) {
   try {
     return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signatureHeader));
   } catch (e) {
-    // length mismatch etc counts as invalid
     return false;
   }
 }
 
-// Pull the fields we actually care about out of Bokun's booking payload.
-// Bokun's payload shape can vary a bit by event type, so this is deliberately
-// defensive — grab what's there, don't throw if something's missing.
 function extractBookingSummary(payload) {
   const booking = payload.booking || payload;
   const customer = booking.customer || booking.contact || {};
   const product = (booking.productBookings && booking.productBookings[0]) || booking.activity || {};
 
-  // Normalise phone to digits only (matches how WhatsApp numbers are stored
-  // in inbox.js, e.g. "61400044004") so we can match against conversations.
   const rawPhone = customer.phoneNumber || customer.phone || '';
-  const phone = rawPhone.replace(/[^0-9]/g, '').replace(/^0/, '61'); // best-effort AU normalisation
+  const phone = rawPhone.replace(/[^0-9]/g, '').replace(/^0/, '61');
 
   return {
     bookingId: booking.confirmationCode || booking.id || payload.bookingId || String(Date.now()),
@@ -89,30 +54,99 @@ function extractBookingSummary(payload) {
   };
 }
 
-function recordBooking(payload) {
+async function recordBooking(payload) {
   const summary = extractBookingSummary(payload);
-  store.bookings[summary.bookingId] = {
+  const now = new Date().toISOString();
+
+  fallbackBookings.set(summary.bookingId, {
     ...summary,
     operatorId: OPERATOR_ID,
-    receivedAt: new Date().toISOString(),
-    raw: payload, // keep the full payload for reference/debugging
-  };
-  save();
+    receivedAt: now,
+    raw: payload,
+  });
+
+  if (supabase) {
+    try {
+      await supabase.from('bokun_bookings').upsert({
+        booking_id: summary.bookingId,
+        phone: summary.phone,
+        customer_name: summary.customerName,
+        tour_name: summary.tourName,
+        date: summary.date,
+        pax: summary.pax,
+        price: summary.price,
+        currency: summary.currency,
+        status: summary.status,
+        raw: payload,
+        created_at: now
+      }, { onConflict: 'booking_id' });
+    } catch (err) {
+      console.warn('Bokun Supabase record failed:', err.message);
+    }
+  }
+
   return summary;
 }
 
-function listBookings() {
-  return Object.values(store.bookings).sort((a, b) => (b.receivedAt || '').localeCompare(a.receivedAt || ''));
+async function listBookings() {
+  if (!supabase) {
+    return Array.from(fallbackBookings.values()).sort((a, b) => (b.receivedAt || '').localeCompare(a.receivedAt || ''));
+  }
+  try {
+    const { data, error } = await supabase
+      .from('bokun_bookings')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.warn('listBookings error:', error.message);
+      return Array.from(fallbackBookings.values());
+    }
+    return (data || []).map(row => ({
+      bookingId: row.booking_id,
+      phone: row.phone,
+      customerName: row.customer_name,
+      tourName: row.tour_name,
+      date: row.date,
+      pax: row.pax,
+      price: row.price,
+      currency: row.currency,
+      status: row.status,
+      receivedAt: row.created_at
+    }));
+  } catch (err) {
+    console.warn('listBookings failed:', err.message);
+    return Array.from(fallbackBookings.values());
+  }
 }
 
-// Find bookings for a given WhatsApp phone number (same normalised format
-// inbox.js uses), most recent first.
-function getBookingsForPhone(phone) {
+async function getBookingsForPhone(phone) {
   const normalised = String(phone).replace(/[^0-9]/g, '');
-  return listBookings().filter(b => b.phone === normalised);
+  if (!supabase) {
+    return (await listBookings()).filter(b => b.phone === normalised);
+  }
+  try {
+    const { data, error } = await supabase
+      .from('bokun_bookings')
+      .select('*')
+      .eq('phone', normalised)
+      .order('created_at', { ascending: false });
+    if (error || !data) return [];
+    return data.map(row => ({
+      bookingId: row.booking_id,
+      phone: row.phone,
+      customerName: row.customer_name,
+      tourName: row.tour_name,
+      date: row.date,
+      pax: row.pax,
+      price: row.price,
+      currency: row.currency,
+      status: row.status,
+      receivedAt: row.created_at
+    }));
+  } catch (err) {
+    return [];
+  }
 }
-
-load();
 
 module.exports = {
   verifySignature,

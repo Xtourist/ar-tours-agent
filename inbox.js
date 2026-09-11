@@ -25,24 +25,43 @@ if (!supabase) {
 // In-memory fallback so the app doesn't crash if Supabase env vars are
 // missing (e.g. local dev without a .env) — but this fallback still has the
 // same old problem (wiped on restart), so it's a safety net, not the plan.
-const fallback = { conversations: new Map(), messages: [], push: new Map(), media: [] };
+const fallback = { conversations: new Map(), messages: [], push: new Map(), media: [], aiHistory: new Map(), handoffs: new Map() };
 
-async function record(phone, name, direction, body) {
+async function record(phone, name, direction, body, messageId = null) {
   const at = new Date().toISOString();
   if (!supabase) {
     if (!fallback.conversations.has(phone)) fallback.conversations.set(phone, { name: name || phone });
-    if (name) fallback.conversations.get(phone).name = name;
+    // Only update name if a valid non-empty real name is provided
+    if (name && name !== phone) fallback.conversations.get(phone).name = name;
     fallback.conversations.get(phone).lastAt = at;
-    fallback.messages.push({ phone, dir: direction, body: body || '', at });
+    fallback.messages.push({ phone, dir: direction, body: body || '', at, message_id: messageId });
     return;
   }
+
+  // 1. Fetch existing conversation to avoid overwriting name with null/phone
+  const { data: existing } = await supabase
+    .from('conversations')
+    .select('name')
+    .eq('phone', phone)
+    .maybeSingle();
+
+  let finalName = existing?.name;
+  if (name && name !== phone) {
+    finalName = name;
+  } else if (!finalName) {
+    finalName = phone;
+  }
+
   await supabase.from('conversations').upsert({
     phone,
-    name: name || phone,
+    name: finalName,
     last_at: at,
     operator_id: OPERATOR_ID,
   }, { onConflict: 'phone' });
-  await supabase.from('messages').insert({ phone, dir: direction, body: body || '', at });
+
+  const msgPayload = { phone, dir: direction, body: body || '', at };
+  if (messageId) msgPayload.message_id = messageId;
+  await supabase.from('messages').insert(msgPayload);
 }
 
 async function listConversations() {
@@ -58,19 +77,21 @@ async function listConversations() {
     .order('last_at', { ascending: false });
   if (error) { console.warn('listConversations error:', error.message); return []; }
 
-  // Pull the latest message per phone for the preview text.
+  // Pull the latest message per phone for the preview text in parallel
   const results = await Promise.all((convos || []).map(async (c) => {
     const { data: last } = await supabase
       .from('messages')
-      .select('body')
+      .select('body, dir')
       .eq('phone', c.phone)
       .order('at', { ascending: false })
       .limit(1);
+    const lastMsg = last && last[0];
+    const preview = lastMsg ? (lastMsg.dir === 'outbound' ? `You: ${lastMsg.body}` : lastMsg.body) : '';
     return {
       phone: c.phone,
       name: c.name,
       lastAt: c.last_at,
-      preview: last && last[0] ? last[0].body : '',
+      preview,
       businessNumberId: c.business_number_id || null,
     };
   }));
@@ -79,19 +100,49 @@ async function listConversations() {
 
 async function getMessages(phone) {
   if (!supabase) {
-    return fallback.messages.filter(m => m.phone === phone).map(m => ({ dir: m.dir, body: m.body, at: m.at }));
+    return fallback.messages.filter(m => m.phone === phone).map(m => {
+      const mediaList = fallback.media.filter(med => med.phone === phone && med.messageId && med.messageId === m.message_id);
+      return { dir: m.dir, body: m.body, at: m.at, media: mediaList.map(med => ({ id: med.id, type: med.type, mime: med.mime, size: med.size, filename: med.filename })) };
+    });
   }
-  const { data, error } = await supabase
+  const { data: msgs, error } = await supabase
     .from('messages')
-    .select('dir, body, at')
+    .select('dir, body, at, message_id')
     .eq('phone', phone)
     .order('at', { ascending: true })
     .limit(500);
   if (error) { console.warn('getMessages error:', error.message); return []; }
-  return data || [];
+
+  // Query media items associated with this phone
+  const { data: mediaItems } = await supabase
+    .from('media')
+    .select('message_id, media_id, type, mime, size, filename')
+    .eq('phone', phone);
+
+  const mediaMap = new Map();
+  (mediaItems || []).forEach(item => {
+    if (item.message_id) {
+      if (!mediaMap.has(item.message_id)) mediaMap.set(item.message_id, []);
+      mediaMap.get(item.message_id).push({
+        id: item.media_id,
+        type: item.type,
+        mime: item.mime,
+        size: item.size,
+        filename: item.filename
+      });
+    }
+  });
+
+  return (msgs || []).map(m => ({
+    dir: m.dir,
+    body: m.body,
+    at: m.at,
+    media: m.message_id && mediaMap.has(m.message_id) ? mediaMap.get(m.message_id) : []
+  }));
 }
 
 // 24h window: open if the customer sent an inbound message within the last 24h
+// Note: only genuine 'inbound' messages count. System/automated events do not.
 async function isWindowOpen(phone) {
   const msgs = await getMessages(phone);
   for (let i = msgs.length - 1; i >= 0; i--) {
@@ -103,10 +154,7 @@ async function isWindowOpen(phone) {
   return false;
 }
 
-// Multi-number support: remember which business phone number (Cloud API
-// phone_number_id) a conversation belongs to, so replies from /inbox and
-// future auto-replies go out from the same number the customer messaged —
-// instead of always defaulting to the main number.
+// Multi-number support
 async function setBusinessNumber(phone, businessNumberId) {
   if (!businessNumberId) return;
   if (!supabase) {
@@ -145,7 +193,11 @@ async function getPushSubscriptions() {
   if (!supabase) return Array.from(fallback.push.values());
   const { data, error } = await supabase.from('push_subscriptions').select('endpoint, keys');
   if (error) { console.warn('getPushSubscriptions error:', error.message); return []; }
-  return (data || []).map(r => ({ endpoint: r.endpoint, ...r.keys }));
+  // WebPush expects: { endpoint: string, keys: { p256dh: string, auth: string } }
+  return (data || []).map(r => ({
+    endpoint: r.endpoint,
+    keys: r.keys && r.keys.p256dh ? r.keys : (r.keys?.keys || r.keys)
+  }));
 }
 
 // --- Media (photos/docs sent by customers) ---
@@ -178,6 +230,80 @@ async function getMediaForMessage(phone, messageId) {
   return (data || []).map(m => ({ messageId, id: m.media_id, type: m.type, mime: m.mime, size: m.size, filename: m.filename }));
 }
 
+// --- Persistent AI Conversation History ---
+async function loadAIHistory(phone) {
+  if (!supabase) return fallback.aiHistory.get(phone) || [];
+  try {
+    const { data } = await supabase.from('ai_history').select('history').eq('phone', phone).maybeSingle();
+    return (data && Array.isArray(data.history)) ? data.history : [];
+  } catch (err) {
+    console.warn('loadAIHistory failed:', err.message);
+    return [];
+  }
+}
+
+async function saveAIHistory(phone, history) {
+  if (!supabase) {
+    fallback.aiHistory.set(phone, history);
+    return;
+  }
+  try {
+    await supabase.from('ai_history').upsert({
+      phone,
+      history,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'phone' });
+  } catch (err) {
+    console.warn('saveAIHistory failed:', err.message);
+  }
+}
+
+// --- Persistent Human Handoff State ---
+async function loadHandoffs() {
+  if (!supabase) {
+    return Array.from(fallback.handoffs.entries()).map(([phone, info]) => ({ phone, ...info }));
+  }
+  try {
+    const { data } = await supabase.from('handoffs').select('phone, reason, started_at');
+    return (data || []).map(row => ({
+      phone: row.phone,
+      reason: row.reason,
+      since: new Date(row.started_at).getTime()
+    }));
+  } catch (err) {
+    console.warn('loadHandoffs failed:', err.message);
+    return [];
+  }
+}
+
+async function saveHandoff(phone, reason) {
+  if (!supabase) {
+    fallback.handoffs.set(phone, { reason, since: Date.now() });
+    return;
+  }
+  try {
+    await supabase.from('handoffs').upsert({
+      phone,
+      reason,
+      started_at: new Date().toISOString()
+    }, { onConflict: 'phone' });
+  } catch (err) {
+    console.warn('saveHandoff failed:', err.message);
+  }
+}
+
+async function removeHandoff(phone) {
+  if (!supabase) {
+    fallback.handoffs.delete(phone);
+    return;
+  }
+  try {
+    await supabase.from('handoffs').delete().eq('phone', phone);
+  } catch (err) {
+    console.warn('removeHandoff failed:', err.message);
+  }
+}
+
 module.exports = {
   record,
   listConversations,
@@ -190,5 +316,10 @@ module.exports = {
   getPushSubscriptions,
   recordMedia,
   getMediaForMessage,
+  loadAIHistory,
+  saveAIHistory,
+  loadHandoffs,
+  saveHandoff,
+  removeHandoff,
   OPERATOR_ID,
 };

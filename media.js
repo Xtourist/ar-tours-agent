@@ -21,7 +21,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 
-const GRAPH_API_VERSION = process.env.WHATSAPP_GRAPH_VERSION || 'v18.0';
+const GRAPH_API_VERSION = process.env.WHATSAPP_GRAPH_VERSION || 'v21.0';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 const MEDIA_BUCKET = process.env.SUPABASE_MEDIA_BUCKET || 'whatsapp-media';

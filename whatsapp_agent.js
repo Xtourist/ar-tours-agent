@@ -60,7 +60,14 @@ const HANDOFF_KEYWORDS = [
 'complaint', 'complain', 'urgent', 'call me', 'refund'
 ];
 
-const FALLBACK_PHRASE = "that's a great question. i'll have one of our travel specialists confirm the details and get back to you shortly.";
+// Fuzzy fallback detection: instead of exact string match, check for the
+// key semantic tokens so the handoff still triggers even when the LLM adds
+// punctuation, exclamation marks, or slightly rephrases.
+const FALLBACK_TOKENS = ['great question', 'travel specialist', 'confirm the details', 'get back to you'];
+function containsFallbackPhrase(text) {
+  const lower = (text || '').toLowerCase();
+  return FALLBACK_TOKENS.every(tok => lower.includes(tok));
+}
 
 function isHandoffTriggered(messageText) {
 const lower = messageText.toLowerCase();
@@ -101,10 +108,23 @@ const entry = humanHandoff.get(phoneNumber);
 if (!entry) return false;
 if (Date.now() - entry.since > HANDOFF_DURATION_MS) {
 humanHandoff.delete(phoneNumber);
+inbox.removeHandoff(phoneNumber).catch(() => {});
 return false;
 }
 return true;
 }
+
+// Preload active handoffs from Supabase on boot
+inbox.loadHandoffs().then(active => {
+for (const h of active) {
+if (Date.now() - h.since <= HANDOFF_DURATION_MS) {
+humanHandoff.set(h.phone, { since: h.since, reason: h.reason });
+} else {
+inbox.removeHandoff(h.phone).catch(() => {});
+}
+}
+console.log(`Loaded ${humanHandoff.size} active handoffs from database.`);
+}).catch(err => console.warn('Could not preload handoffs:', err.message));
 
 // Build a readable transcript of the last N messages for this phone number,
 // so the handoff email/Sheet row includes conversation context instead of
@@ -124,6 +144,7 @@ return '';
 
 async function startHandoff(phoneNumber, reason, context = {}) {
 humanHandoff.set(phoneNumber, { since: Date.now(), reason });
+inbox.saveHandoff(phoneNumber, reason).catch(() => {});
 console.log(`HANDOFF STARTED for ${phoneNumber} — reason: ${reason}. Bot will pause auto-replies; reply manually from WhatsApp Manager inbox.`);
 if (!context.silent) {
 const transcript = await buildTranscript(phoneNumber);
@@ -209,6 +230,26 @@ await handleCustomerMessage(phoneNumber, userName, messageText, businessNumberId
 const media = msg[msg.type];
 console.log(`Media from ${userName} (${phoneNumber}) via ${businessNumberId}: type=${msg.type}, id=${media.id}`);
 await handleMediaMessage(phoneNumber, userName, msgId, msg.type, media, businessNumberId);
+} else if (msg.type === 'interactive') {
+// Handle button replies or list selections from customers
+const interactive = msg.interactive;
+const selectedText = (interactive.button_reply && interactive.button_reply.title) ||
+(interactive.list_reply && interactive.list_reply.title) ||
+'[Button Selection]';
+console.log(`Interactive from ${userName} (${phoneNumber}): ${selectedText}`);
+await handleCustomerMessage(phoneNumber, userName, selectedText, businessNumberId);
+} else if (msg.type === 'location') {
+const loc = msg.location;
+const locText = `📍 Location shared: ${loc.name || loc.address || `${loc.latitude}, ${loc.longitude}`}`;
+await inbox.record(phoneNumber, userName, 'inbound', locText, msgId);
+await sendWhatsAppMessage(phoneNumber, '📍 Thank you for sharing your location! Our team has noted your pickup point.', businessNumberId);
+} else if (msg.type === 'contacts') {
+const contactSummary = '👤 Contact shared';
+await inbox.record(phoneNumber, userName, 'inbound', contactSummary, msgId);
+await sendWhatsAppMessage(phoneNumber, '👤 Received the contact details. Thanks!', businessNumberId);
+} else {
+console.log(`Unhandled message type from ${phoneNumber}: ${msg.type}`);
+await inbox.record(phoneNumber, userName, 'inbound', `[${msg.type.toUpperCase()}]`, msgId);
 }
 }
 }
@@ -237,7 +278,7 @@ return res.sendStatus(401);
 // Ack immediately — process after, same pattern as the WhatsApp webhook.
 res.sendStatus(200);
 
-const summary = bokun.recordBooking(req.body);
+const summary = await bokun.recordBooking(req.body);
 console.log(`Bokun booking recorded: ${summary.bookingId} — ${summary.tourName} (${summary.status}) for ${summary.customerName} [${summary.phone || 'no phone'}]`);
 
 // If we can match this booking to a WhatsApp number, drop a note into that
@@ -247,7 +288,8 @@ console.log(`Bokun booking recorded: ${summary.bookingId} — ${summary.tourName
 if (summary.phone) {
 try {
 const note = `📅 Bokun booking ${summary.status.toLowerCase().includes('cancel') ? 'cancelled' : 'update'}: ${summary.tourName}${summary.date ? ' on ' + summary.date : ''}${summary.pax ? ' for ' + summary.pax + ' pax' : ''} (${summary.bookingId})`;
-await inbox.record(summary.phone, summary.customerName, 'inbound', note);
+// Use 'system' direction so automated Bokun webhook notes do NOT falsely reopen the customer 24h WhatsApp window
+await inbox.record(summary.phone, summary.customerName, 'system', note);
 } catch (noteErr) {
 console.warn('Could not attach Bokun booking note to inbox:', noteErr.message);
 }
@@ -260,18 +302,18 @@ console.error('Bokun webhook error:', error.message);
 });
 
 // View synced Bokun bookings (password-protected, same auth as the inbox)
-app.get('/inbox/api/bokun-bookings', inboxAuth, (req, res) => {
-res.json(bokun.listBookings());
+app.get('/inbox/api/bokun-bookings', inboxAuth, async (req, res) => {
+res.json(await bokun.listBookings());
 });
-app.get('/inbox/api/conversations/:phone/bokun-bookings', inboxAuth, (req, res) => {
-res.json(bokun.getBookingsForPhone(req.params.phone));
+app.get('/inbox/api/conversations/:phone/bokun-bookings', inboxAuth, async (req, res) => {
+res.json(await bokun.getBookingsForPhone(req.params.phone));
 });
 
 async function handleMediaMessage(phoneNumber, userName, msgId, mediaType, mediaObj, businessNumberId) {
 try {
 // Log the media in the inbox
 const caption = mediaObj.caption || `[${mediaType.toUpperCase()}]`;
-await inbox.record(phoneNumber, userName, 'inbound', caption);
+await inbox.record(phoneNumber, userName, 'inbound', caption, msgId);
 notifyPush(userName || phoneNumber, `Sent a ${mediaType}${caption && caption !== `[${mediaType.toUpperCase()}]` ? ': ' + caption : ''}`, phoneNumber).catch(() => {});
 
 // Try to download and cache the media
@@ -307,9 +349,10 @@ try {
 const hasCard = containsCardNumber(messageText);
 const safeText = hasCard ? redactCardNumbers(messageText) : messageText;
 
-const history = getConversationHistory(phoneNumber);
+const history = await getConversationHistory(phoneNumber);
 history.push({ role: 'user', content: safeText });
 conversationHistory.set(phoneNumber, history);
+await inbox.saveAIHistory(phoneNumber, history);
 await inbox.record(phoneNumber, userName, 'inbound', safeText);
 notifyPush(userName || phoneNumber, safeText.slice(0, 120), phoneNumber).catch(() => {});
 
@@ -319,6 +362,7 @@ startHandoff(phoneNumber, 'customer sent payment/card details (redacted)', { nam
 const cardMsg = "For your security, we never take card or payment details over WhatsApp — I haven't stored what you sent. 🙏 Our team will send you a secure payment link directly once your booking is confirmed. I've flagged this chat for a team member to follow up shortly.";
 history.push({ role: 'assistant', content: cardMsg });
 conversationHistory.set(phoneNumber, history);
+await inbox.saveAIHistory(phoneNumber, history);
 await sendWhatsAppMessage(phoneNumber, cardMsg, businessNumberId);
 return;
 }
@@ -336,6 +380,7 @@ startHandoff(phoneNumber, 'customer requested human', { name: userName, lastMess
 const handoffMsg = "No problem! I've passed this on to one of our AR Tours travel specialists, who will follow up with you here shortly. 🙏\n\nIf it's urgent, you can also reach us directly:\n📧 human@theartours.com\n📞 +61 400 044 004";
 history.push({ role: 'assistant', content: handoffMsg });
 conversationHistory.set(phoneNumber, history);
+await inbox.saveAIHistory(phoneNumber, history);
 await sendWhatsAppMessage(phoneNumber, handoffMsg, businessNumberId);
 return;
 }
@@ -344,12 +389,13 @@ const response = await generateAIResponse(history, userName);
 
 history.push({ role: 'assistant', content: response });
 conversationHistory.set(phoneNumber, history);
+await inbox.saveAIHistory(phoneNumber, history);
 
 await sendWhatsAppMessage(phoneNumber, response, businessNumberId);
 
 // If the AI itself couldn't answer (used the master-instructions fallback line),
 // also hand off so a human follows up rather than the bot repeating itself.
-if (response.toLowerCase().includes(FALLBACK_PHRASE)) {
+if (containsFallbackPhrase(response)) {
 startHandoff(phoneNumber, 'AI could not answer the question', { name: userName, lastMessage: messageText }).catch(() => {});
 }
 } catch (error) {
@@ -359,40 +405,106 @@ await sendWhatsAppMessage(phoneNumber, 'Sorry, I had trouble processing that. Pl
 }
 
 async function generateAIResponse(history, userName) {
-const systemPrompt = buildSystemPrompt(userName);
+  const systemPrompt = buildSystemPrompt(userName);
 
-if (process.env.GROQ_API_KEY) {
-try {
-return await callGroqAPI(history, systemPrompt);
-} catch (error) {
-console.warn('Groq failed:', error.message);
-}
+  // 1. Try Claude (Anthropic) — best quality
+  if (process.env.CLAUDE_API_KEY && process.env.CLAUDE_API_KEY !== 'your_claude_api_key_here') {
+    try {
+      console.log('🤖 Attempting Claude API...');
+      return await callClaudeAPI(history, systemPrompt);
+    } catch (error) {
+      console.warn('Claude failed:', error.message);
+    }
+  }
+
+  // 2. Try Gemini (Google) — strong fallback
+  const geminiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+  if (geminiKey && geminiKey !== 'your_google_api_key_here') {
+    try {
+      console.log('🤖 Attempting Gemini API...');
+      return await callGeminiAPI(history, systemPrompt, geminiKey);
+    } catch (error) {
+      console.warn('Gemini failed:', error.message);
+    }
+  }
+
+  // 3. Try Groq — reliable always-on fallback
+  if (process.env.GROQ_API_KEY) {
+    try {
+      console.log('🤖 Attempting Groq API...');
+      return await callGroqAPI(history, systemPrompt);
+    } catch (error) {
+      console.warn('Groq failed:', error.message);
+    }
+  }
+
+  console.error('❌ All AI providers failed or unconfigured.');
+  return "Thanks for reaching out to AR Tours! We're experiencing high demand right now. Please try again in a moment, or contact us at human@theartours.com or +61 400 044 004.";
 }
 
-return "Thanks for reaching out to AR Tours! We're experiencing high demand right now. Please try again in a moment, or email support@artours.com.au.";
+async function callClaudeAPI(history, systemPrompt) {
+  const response = await axios.post(
+    'https://api.anthropic.com/v1/messages',
+    {
+      model: 'claude-3-5-sonnet-20241022',
+      max_tokens: 500,
+      system: systemPrompt,
+      messages: history.map(m => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.content
+      }))
+    },
+    {
+      headers: {
+        'x-api-key': process.env.CLAUDE_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json'
+      },
+      timeout: 12000
+    }
+  );
+  return response.data.content[0].text;
+}
+
+async function callGeminiAPI(history, systemPrompt, apiKey) {
+  const contents = history.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }]
+  }));
+
+  const response = await axios.post(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    {
+      contents,
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      generationConfig: { maxOutputTokens: 500, temperature: 0.7 }
+    },
+    { headers: { 'Content-Type': 'application/json' }, timeout: 12000 }
+  );
+  return response.data.candidates[0].content.parts[0].text;
 }
 
 async function callGroqAPI(history, systemPrompt) {
-const response = await axios.post(
-'https://api.groq.com/openai/v1/chat/completions',
-{
-model: 'llama-3.1-8b-instant',
-messages: [
-{ role: 'system', content: systemPrompt },
-...history.map(m => ({ role: m.role, content: m.content }))
-],
-max_tokens: 500,
-temperature: 0.7
-},
-{
-headers: {
-'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-'Content-Type': 'application/json'
-}
-}
-);
-
-return response.data.choices[0].message.content;
+  const response = await axios.post(
+    'https://api.groq.com/openai/v1/chat/completions',
+    {
+      model: 'groq/compound-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...history.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }))
+      ],
+      max_tokens: 500,
+      temperature: 0.7
+    },
+    {
+      headers: {
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 12000
+    }
+  );
+  return response.data.choices[0].message.content;
 }
 
 function buildSystemPrompt(userName) {
@@ -528,9 +640,10 @@ Keep individual replies concise and WhatsApp-friendly (short paragraphs / bullet
 Customer name: ${userName}`;
 }
 
-function getConversationHistory(phoneNumber) {
+async function getConversationHistory(phoneNumber) {
 if (!conversationHistory.has(phoneNumber)) {
-conversationHistory.set(phoneNumber, []);
+const loaded = await inbox.loadAIHistory(phoneNumber);
+conversationHistory.set(phoneNumber, loaded || []);
 }
 let history = conversationHistory.get(phoneNumber);
 if (history.length > MAX_HISTORY) {
@@ -540,6 +653,8 @@ conversationHistory.set(phoneNumber, history);
 return history;
 }
 
+const GRAPH_API_VERSION = process.env.WHATSAPP_GRAPH_VERSION || 'v21.0';
+
 // fromNumberId lets us send from whichever business number (+61400044004 or
 // the new +61400040243) actually owns this conversation. Falls back to the
 // main number's env var if none is known yet (e.g. very first outbound send
@@ -548,7 +663,7 @@ async function sendWhatsAppMessage(phoneNumber, messageText, fromNumberId) {
 const senderId = fromNumberId || (await inbox.getBusinessNumber(phoneNumber)) || process.env.PHONE_NUMBER_ID;
 try {
 await axios.post(
-`https://graph.facebook.com/v18.0/${senderId}/messages`,
+`https://graph.facebook.com/${GRAPH_API_VERSION}/${senderId}/messages`,
 {
 messaging_product: 'whatsapp',
 to: phoneNumber,
@@ -583,7 +698,7 @@ const components = bodyParams.length
 ? [{ type: 'body', parameters: bodyParams.map(p => ({ type: 'text', text: String(p) })) }]
 : [];
 await axios.post(
-`https://graph.facebook.com/v18.0/${senderId}/messages`,
+`https://graph.facebook.com/${GRAPH_API_VERSION}/${senderId}/messages`,
 {
 messaging_product: 'whatsapp',
 to: phoneNumber,
@@ -661,6 +776,7 @@ if (req.body.secret !== process.env.WEBHOOK_SECRET) return res.sendStatus(403);
 const { phone } = req.body;
 if (!phone) return res.status(400).json({ error: 'phone is required' });
 humanHandoff.delete(phone);
+inbox.removeHandoff(phone).catch(() => {});
 console.log(`Handoff manually released for ${phone} — bot will resume auto-replies.`);
 res.json({ released: phone });
 });
@@ -722,7 +838,10 @@ if (verifySessionToken(cookies[SESSION_COOKIE])) return next();
 // success set the session cookie so the browser won't be asked again.
 const hdr = req.headers.authorization || '';
 const b64 = hdr.split(' ')[1] || '';
-const [u, p] = Buffer.from(b64, 'base64').toString().split(':');
+const decoded = Buffer.from(b64, 'base64').toString();
+const colonIdx = decoded.indexOf(':');
+const u = colonIdx !== -1 ? decoded.slice(0, colonIdx) : '';
+const p = colonIdx !== -1 ? decoded.slice(colonIdx + 1) : '';
 if (u === user && p === pass) {
 res.set('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(makeSessionToken(user))}; Max-Age=${SESSION_DAYS * 24 * 60 * 60}; HttpOnly; SameSite=Lax; Path=/`);
 return next();
@@ -775,6 +894,7 @@ res.json({ ok: true });
 // after you've already replied to a customer.
 app.post('/inbox/api/conversations/:phone/mark-handled', inboxAuth, (req, res) => {
 humanHandoff.delete(req.params.phone);
+inbox.removeHandoff(req.params.phone).catch(() => {});
 console.log(`Handoff cleared via inbox "Mark as handled" for ${req.params.phone}`);
 res.json({ ok: true });
 });

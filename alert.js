@@ -25,18 +25,28 @@ function getTransporter() {
   return transporter;
 }
 
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 async function sendHandoffAlert({ phone, name, reason, lastMessage }) {
   const t = getTransporter();
   if (!t) return;
 
   const to = process.env.ALERT_EMAIL_TO || process.env.ALERT_EMAIL_USER;
-  const inboxUrl = 'https://ar-tours-agent.onrender.com/inbox';
+  const inboxUrl = process.env.INBOX_URL || 'https://ar-tours-agent.onrender.com/inbox';
 
   try {
     await t.sendMail({
       from: `"AR Tours Bot" <${process.env.ALERT_EMAIL_USER}>`,
       to,
-      subject: `🙋 Customer needs you — ${name || phone}`,
+      subject: `🙋 Customer needs you — ${escapeHtml(name || phone)}`,
       text: `A customer has asked to speak with a human.\n\n` +
             `Name: ${name || 'Unknown'}\n` +
             `Phone: +${phone}\n` +
@@ -44,11 +54,11 @@ async function sendHandoffAlert({ phone, name, reason, lastMessage }) {
             `Their message: "${lastMessage}"\n\n` +
             `Reply here: ${inboxUrl}`,
       html: `<p><b>A customer has asked to speak with a human.</b></p>
-             <p><b>Name:</b> ${name || 'Unknown'}<br>
-             <b>Phone:</b> +${phone}<br>
-             <b>Reason:</b> ${reason}<br>
-             <b>Their message:</b> "${lastMessage}"</p>
-             <p><a href="${inboxUrl}">Open the inbox to reply →</a></p>`
+             <p><b>Name:</b> ${escapeHtml(name || 'Unknown')}<br>
+             <b>Phone:</b> +${escapeHtml(phone)}<br>
+             <b>Reason:</b> ${escapeHtml(reason)}<br>
+             <b>Their message:</b> "${escapeHtml(lastMessage)}"</p>
+             <p><a href="${escapeHtml(inboxUrl)}">Open the inbox to reply →</a></p>`
     });
     console.log(`Handoff alert email sent for ${phone}`);
   } catch (err) {
