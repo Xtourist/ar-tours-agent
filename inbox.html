@@ -312,6 +312,7 @@ input, select, textarea { font-family: inherit; color: inherit; }
 .media-size { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .media-link { color: var(--brand); text-decoration: none; font-weight: 600; }
 .media-link:hover { text-decoration: underline; }
+.media-caption { padding: 6px 8px 2px; font-size: 14.5px; word-wrap: break-word; white-space: pre-wrap; color: var(--ink); }
 
 /* ===== Quick actions + composer ===== */
 .warn { background: var(--alert-bg); color: var(--alert); padding: 12px 16px; font-size: 13px; font-weight: 500; text-align: center; flex-shrink: 0; z-index: 10; }
@@ -461,6 +462,7 @@ textarea.field { resize: vertical; min-height: 80px; }
           <div class="s" id="chPhone"></div>
         </div>
         <div class="header-actions">
+          <button class="icon-btn" id="chCallBtn" title="Call Contact">📞</button>
           <span class="status-pill" id="chStatus"></span>
           <button class="handled-btn" id="handledBtn" style="display:none">✓ Handled</button>
         </div>
@@ -684,7 +686,7 @@ function render(){
           <span class="convo-time">${relTime(c.lastAt)}</span>
         </div>
         <div class="convo-prev">
-          <span class="convo-prev-text">${isOut ? '<span class="sender-you">You:</span> ' : ''}${esc((c.preview||'').slice(0,50))}</span>
+          <span class="convo-prev-text">${isOut && !String(c.preview||'').startsWith('You:') ? '<span class="sender-you">You:</span> ' : ''}${esc((c.preview||'').slice(0,50))}</span>
           ${unread?'<span class="unread-dot"></span>':''}
         </div>
         ${tags?`<div class="tags">${tags}</div>`:''}
@@ -730,13 +732,21 @@ async function openChat(phone,name){
   document.getElementById('ciPhone').innerText=displayPhone;
   
   // Update action buttons (Call / Email)
-  const callBtn = document.getElementById('ciCallBtn');
-  if(callBtn) callBtn.onclick = () => {
-    if(cleanDigits) window.open('tel:+' + cleanDigits, '_self');
+  const callHandler = () => {
+    if(cleanDigits) {
+      window.location.href = 'tel:+' + cleanDigits;
+    } else {
+      toast('No valid phone number to call.');
+    }
   };
+  const chCall = document.getElementById('chCallBtn');
+  if(chCall) chCall.onclick = callHandler;
+  const ciCall = document.getElementById('ciCallBtn');
+  if(ciCall) ciCall.onclick = callHandler;
+
   const mailBtn = document.getElementById('ciMailBtn');
   if(mailBtn) mailBtn.onclick = () => {
-    if(currentCustomerEmail) window.open('mailto:' + currentCustomerEmail, '_self');
+    if(currentCustomerEmail) window.location.href = 'mailto:' + currentCustomerEmail;
     else toast('No email address on file for this contact.');
   };
   
@@ -752,14 +762,17 @@ async function openChat(phone,name){
 }
 
 async function loadBokunCard(phone){
+  const chatPhone = cur;
   const holder=document.getElementById('bokunCard');holder.innerHTML='';
   const ciBokun=document.getElementById('ciBokunData');ciBokun.innerHTML='';
   const ciTourSec=document.getElementById('ciTourSection');ciTourSec.style.display='none';
   
   try{
     const r=await fetch('/inbox/api/conversations/'+encodeURIComponent(phone)+'/bokun-bookings');
+    if(cur !== chatPhone) return;
     if(!r.ok)return;
     const bookings=await r.json();
+    if(cur !== chatPhone) return;
     if(!bookings || !bookings.length) return;
     const b=bookings[0];
     if(b.email || b.customerEmail) {
@@ -787,11 +800,14 @@ async function loadBokunCard(phone){
 
 async function loadMsgs(){
   if(!cur)return;
+  const chatPhone = cur;
   const box=document.getElementById('msgs');
   try{
-    const r=await fetch('/inbox/api/conversations/'+encodeURIComponent(cur)+'/messages');
+    const r=await fetch('/inbox/api/conversations/'+encodeURIComponent(chatPhone)+'/messages');
+    if(cur !== chatPhone) return;
     if(!r.ok) throw new Error('HTTP ' + r.status);
     const ms=await r.json();
+    if(cur !== chatPhone) return;
     box.innerHTML='';let lastDay='';
     
     if(!Array.isArray(ms) || ms.length===0){
@@ -819,6 +835,11 @@ async function loadMsgs(){
               <div class="media-size">${fmtSize(med.size)}</div></div>`;
               mb.appendChild(mf);
             }
+            if(m.body && m.body.trim()){
+              const cap=document.createElement('div');cap.className='media-caption';
+              cap.innerText=m.body;
+              mb.appendChild(cap);
+            }
             const ts=document.createElement('span');ts.className='meta';
             ts.innerHTML=`${fmtTime(m.at)}${isOut?'<span class="ticks">✓✓</span>':''}`;
             mb.appendChild(ts);
@@ -833,12 +854,14 @@ async function loadMsgs(){
       });
     }
   }catch(err){
+    if(cur !== chatPhone) return;
     console.error('loadMsgs error:', err);
     box.innerHTML=`<div class="empty" style="color:var(--muted)"><div>Could not load messages. Retrying...</div></div>`;
   }
   
-  const wr=await fetch('/inbox/api/conversations/'+encodeURIComponent(cur)+'/window').then(r=>r.json()).catch(()=>({open:true}));
-  const convo=allConvos.find(c=>c.phone===cur);
+  const wr=await fetch('/inbox/api/conversations/'+encodeURIComponent(chatPhone)+'/window').then(r=>r.json()).catch(()=>({open:true}));
+  if(cur !== chatPhone) return;
+  const convo=allConvos.find(c=>c.phone===chatPhone);
   const pill=document.getElementById('chStatus');
   const handledBtn=document.getElementById('handledBtn');
   

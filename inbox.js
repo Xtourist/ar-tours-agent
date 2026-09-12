@@ -68,8 +68,12 @@ async function record(phone, name, direction, body, messageId = null) {
 async function listConversations() {
   if (!supabase) {
     return Array.from(fallback.conversations.entries()).map(([phone, c]) => {
-      const msgs = fallback.messages.filter(m => m.phone === phone);
-      return { phone, name: c.name, lastAt: c.lastAt, preview: msgs.length ? msgs[msgs.length - 1].body : '', businessNumberId: c.businessNumberId || null };
+      const clean = String(phone || '').replace(/[^0-9]/g, '');
+      const phones = Array.from(new Set([phone, clean, '+' + clean].filter(Boolean)));
+      const msgs = fallback.messages.filter(m => phones.includes(m.phone));
+      const lastMsg = msgs.length ? msgs[msgs.length - 1] : null;
+      const preview = lastMsg ? (lastMsg.dir === 'outbound' ? `You: ${lastMsg.body}` : lastMsg.body) : '';
+      return { phone, name: c.name, lastAt: c.lastAt, preview, lastDir: lastMsg?.dir || null, businessNumberId: c.businessNumberId || null };
     }).sort((a, b) => (b.lastAt || '').localeCompare(a.lastAt || ''));
   }
   const { data: convos, error } = await supabase
@@ -80,10 +84,12 @@ async function listConversations() {
 
   // Pull the latest message per phone for the preview text in parallel
   const results = await Promise.all((convos || []).map(async (c) => {
+    const clean = String(c.phone || '').replace(/[^0-9]/g, '');
+    const phones = Array.from(new Set([c.phone, clean, '+' + clean].filter(Boolean)));
     const { data: last } = await supabase
       .from('messages')
       .select('body, dir')
-      .eq('phone', c.phone)
+      .in('phone', phones)
       .order('at', { ascending: false })
       .limit(1);
     const lastMsg = last && last[0];
@@ -93,6 +99,7 @@ async function listConversations() {
       name: c.name,
       lastAt: c.last_at,
       preview,
+      lastDir: lastMsg?.dir || null,
       businessNumberId: c.business_number_id || null,
     };
   }));
