@@ -4,6 +4,7 @@
 // Bookings are persisted to Supabase ('bokun_bookings' table) with an
 // in-memory fallback so bookings survive Render restarts.
 
+require('dotenv').config();
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 

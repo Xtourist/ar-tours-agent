@@ -8,6 +8,7 @@
 // a Supabase Postgres database instead — real permanent storage that
 // survives restarts, deploys, and sleep cycles.
 
+require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -99,25 +100,28 @@ async function listConversations() {
 }
 
 async function getMessages(phone) {
+  const clean = String(phone || '').replace(/[^0-9]/g, '');
+  const phones = Array.from(new Set([phone, clean, '+' + clean].filter(Boolean)));
+
   if (!supabase) {
-    return fallback.messages.filter(m => m.phone === phone).map(m => {
-      const mediaList = fallback.media.filter(med => med.phone === phone && med.messageId && med.messageId === m.message_id);
+    return fallback.messages.filter(m => phones.includes(m.phone)).map(m => {
+      const mediaList = fallback.media.filter(med => phones.includes(med.phone) && med.messageId && med.messageId === m.message_id);
       return { dir: m.dir, body: m.body, at: m.at, media: mediaList.map(med => ({ id: med.id, type: med.type, mime: med.mime, size: med.size, filename: med.filename })) };
     });
   }
   const { data: msgs, error } = await supabase
     .from('messages')
     .select('dir, body, at, message_id')
-    .eq('phone', phone)
+    .in('phone', phones)
     .order('at', { ascending: true })
     .limit(500);
   if (error) { console.warn('getMessages error:', error.message); return []; }
 
-  // Query media items associated with this phone
+  // Query media items associated with these phone variants
   const { data: mediaItems } = await supabase
     .from('media')
     .select('message_id, media_id, type, mime, size, filename')
-    .eq('phone', phone);
+    .in('phone', phones);
 
   const mediaMap = new Map();
   (mediaItems || []).forEach(item => {

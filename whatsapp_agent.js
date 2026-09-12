@@ -903,15 +903,15 @@ const list = await inbox.listConversations();
 // Attach needsHuman flag + latest matched Bokun booking (tour/date/pax) so
 // the mobile inbox can show a tour tag on each row and sort handed-off /
 // unanswered chats to the top, without a round trip per conversation.
-const withStatus = list.map(c => {
-const bookings = bokun.getBookingsForPhone(c.phone);
+const withStatus = await Promise.all(list.map(async (c) => {
+const bookings = await bokun.getBookingsForPhone(c.phone);
 const latest = bookings && bookings[0];
 return {
 ...c,
 needsHuman: isInHandoff(c.phone),
 tour: latest ? { tourName: latest.tourName, date: latest.date, pax: latest.pax, status: latest.status } : null
 };
-});
+}));
 res.json(withStatus);
 });
 // Lightweight endpoint just for handoff status (used to refresh needsHuman
