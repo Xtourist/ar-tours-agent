@@ -137,8 +137,12 @@ input, select, textarea { font-family: inherit; color: inherit; }
 }
 
 /* Desktop */
-@media (min-width: 960px) {
+@media (min-width: 1100px) {
   .side { width: 360px; }
+  .app.show-chat .contact-info { display: flex; }
+}
+@media (min-width: 960px) and (max-width: 1099px) {
+  .side { width: 340px; }
   .app.show-info .contact-info { display: flex; }
 }
 
@@ -859,6 +863,12 @@ document.getElementById('backBtn').addEventListener('click',()=>{
   document.getElementById('app').classList.remove('show-chat','show-info');
   cur=null;render();
 });
+const closeBtn = document.getElementById('ciClose');
+if(closeBtn) closeBtn.addEventListener('click',()=>{
+  document.getElementById('app').classList.remove('show-info');
+});
+document.getElementById('chAvatar').addEventListener('click', toggleInfo);
+document.querySelector('.chat-head .info').addEventListener('click', toggleInfo);
 document.querySelectorAll('.quick button').forEach(b=>b.onclick=()=>{
   const i = document.getElementById('input');
   if(!i.disabled) { i.value=b.dataset.q; i.focus(); }
