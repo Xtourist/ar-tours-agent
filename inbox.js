@@ -76,34 +76,72 @@ async function listConversations() {
       return { phone, name: c.name, lastAt: c.lastAt, preview, lastDir: lastMsg?.dir || null, businessNumberId: c.businessNumberId || null };
     }).sort((a, b) => (b.lastAt || '').localeCompare(a.lastAt || ''));
   }
-  const { data: convos, error } = await supabase
-    .from('conversations')
-    .select('phone, name, last_at, business_number_id')
-    .order('last_at', { ascending: false });
-  if (error) { console.warn('listConversations error:', error.message); return []; }
 
-  // Pull the latest message per phone for the preview text in parallel
-  const results = await Promise.all((convos || []).map(async (c) => {
-    const clean = String(c.phone || '').replace(/[^0-9]/g, '');
-    const phones = Array.from(new Set([c.phone, clean, '+' + clean].filter(Boolean)));
-    const { data: last } = await supabase
-      .from('messages')
-      .select('body, dir')
-      .in('phone', phones)
-      .order('at', { ascending: false })
-      .limit(1);
-    const lastMsg = last && last[0];
-    const preview = lastMsg ? (lastMsg.dir === 'outbound' ? `You: ${lastMsg.body}` : lastMsg.body) : '';
-    return {
-      phone: c.phone,
-      name: c.name,
-      lastAt: c.last_at,
-      preview,
-      lastDir: lastMsg?.dir || null,
-      businessNumberId: c.business_number_id || null,
-    };
-  }));
-  return results;
+  try {
+    const { data: convos, error } = await supabase
+      .from('conversations')
+      .select('phone, name, last_at, business_number_id')
+      .order('last_at', { ascending: false });
+    if (error) {
+      console.warn('listConversations error:', error.message);
+      return [];
+    }
+    if (!convos || convos.length === 0) {
+      return [];
+    }
+
+    // Collect all phones for single query lookup
+    const allPhones = [];
+    const phoneToOriginal = new Map();
+    for (const c of convos) {
+      const clean = String(c.phone || '').replace(/[^0-9]/g, '');
+      const variants = Array.from(new Set([c.phone, clean, '+' + clean].filter(Boolean)));
+      for (const v of variants) {
+        allPhones.push(v);
+        phoneToOriginal.set(v, c.phone);
+      }
+    }
+
+    // Attempt single batch query to get recent messages across these phones
+    const previewMap = new Map();
+    try {
+      const { data: recentMsgs, error: msgErr } = await supabase
+        .from('messages')
+        .select('phone, body, dir, at')
+        .in('phone', allPhones)
+        .order('at', { ascending: false })
+        .limit(Math.min(allPhones.length * 3, 200));
+
+      if (!msgErr && Array.isArray(recentMsgs)) {
+        for (const m of recentMsgs) {
+          const origPhone = phoneToOriginal.get(m.phone) || m.phone;
+          if (!previewMap.has(origPhone)) {
+            previewMap.set(origPhone, {
+              preview: m.dir === 'outbound' ? `You: ${m.body}` : m.body,
+              lastDir: m.dir || null
+            });
+          }
+        }
+      }
+    } catch (batchErr) {
+      console.warn('listConversations batch messages fetch failed, continuing without previews:', batchErr.message);
+    }
+
+    return convos.map((c) => {
+      const msgInfo = previewMap.get(c.phone) || { preview: '', lastDir: null };
+      return {
+        phone: c.phone,
+        name: c.name,
+        lastAt: c.last_at,
+        preview: msgInfo.preview || '',
+        lastDir: msgInfo.lastDir || null,
+        businessNumberId: c.business_number_id || null,
+      };
+    });
+  } catch (err) {
+    console.error('listConversations unexpected error:', err);
+    return [];
+  }
 }
 
 async function getMessages(phone) {

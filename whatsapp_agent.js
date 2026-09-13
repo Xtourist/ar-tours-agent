@@ -899,20 +899,30 @@ console.log(`Handoff cleared via inbox "Mark as handled" for ${req.params.phone}
 res.json({ ok: true });
 });
 app.get('/inbox/api/conversations', inboxAuth, async (req, res) => {
-const list = await inbox.listConversations();
-// Attach needsHuman flag + latest matched Bokun booking (tour/date/pax) so
-// the mobile inbox can show a tour tag on each row and sort handed-off /
-// unanswered chats to the top, without a round trip per conversation.
-const withStatus = await Promise.all(list.map(async (c) => {
-const bookings = await bokun.getBookingsForPhone(c.phone);
-const latest = bookings && bookings[0];
-return {
-...c,
-needsHuman: isInHandoff(c.phone),
-tour: latest ? { tourName: latest.tourName, date: latest.date, pax: latest.pax, status: latest.status } : null
-};
-}));
-res.json(withStatus);
+  try {
+    const list = await inbox.listConversations();
+    // Attach needsHuman flag + latest matched Bokun booking (tour/date/pax) so
+    // the mobile inbox can show a tour tag on each row and sort handed-off /
+    // unanswered chats to the top, without a round trip per conversation.
+    const withStatus = await Promise.all((list || []).map(async (c) => {
+      let bookings = [];
+      try {
+        bookings = await bokun.getBookingsForPhone(c.phone);
+      } catch (bErr) {
+        console.warn(`bokun.getBookingsForPhone failed for ${c.phone}:`, bErr.message);
+      }
+      const latest = bookings && bookings[0];
+      return {
+        ...c,
+        needsHuman: isInHandoff(c.phone),
+        tour: latest ? { tourName: latest.tourName, date: latest.date, pax: latest.pax, status: latest.status } : null
+      };
+    }));
+    res.json(withStatus);
+  } catch (err) {
+    console.error('Error fetching conversations in /inbox/api/conversations:', err);
+    res.status(500).json({ error: 'Failed to load conversations', details: err.message });
+  }
 });
 // Lightweight endpoint just for handoff status (used to refresh needsHuman
 // flags on poll without re-fetching full conversation list every time).

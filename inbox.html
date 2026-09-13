@@ -186,6 +186,42 @@ input, select, textarea { font-family: inherit; color: inherit; }
 .section-label { padding: 16px 16px 8px; font-size: 12px; font-weight: 600; color: var(--brand); text-transform: uppercase; letter-spacing: 0.05em; }
 .section-label.needs-attention { color: var(--alert); }
 
+/* Skeletons & Status states */
+.skeleton-row {
+  display: flex; gap: 12px; padding: 12px 16px; align-items: center; pointer-events: none;
+}
+.skeleton-avatar {
+  width: 48px; height: 48px; border-radius: 50%; background: var(--panel-hover); flex-shrink: 0;
+  animation: pulseSkeleton 1.5s infinite ease-in-out;
+}
+.skeleton-lines { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.skeleton-line {
+  height: 12px; border-radius: 6px; background: var(--panel-hover);
+  animation: pulseSkeleton 1.5s infinite ease-in-out;
+}
+.skeleton-line.w-half { width: 50%; }
+.skeleton-line.w-short { width: 30%; }
+.skeleton-line.w-long { width: 85%; }
+@keyframes pulseSkeleton {
+  0% { opacity: 0.6; }
+  50% { opacity: 0.25; }
+  100% { opacity: 0.6; }
+}
+
+.convos-status-box {
+  padding: 40px 20px; text-align: center; color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+}
+.convos-status-icon { font-size: 32px; line-height: 1; }
+.convos-status-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+.convos-status-desc { font-size: 13px; color: var(--muted); max-width: 240px; line-height: 1.4; }
+.convos-status-btn {
+  margin-top: 4px; padding: 8px 18px; border-radius: 20px; border: none;
+  background: var(--brand); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+.convos-status-btn:hover { background: var(--brand-dark); }
+
 .convo {
   display: flex; gap: 12px; padding: 12px 16px; cursor: pointer;
   align-items: center; transition: background 0.1s; position: relative;
@@ -644,67 +680,148 @@ function toggleInfo() {
 }
 document.getElementById('ciClose').onclick = () => { document.getElementById('app').classList.remove('show-info'); };
 
-async function loadConvos(){
+let convosLoading = true;
+let convosError = null; // null | 'auth' | 'network'
+
+function renderSkeleton() {
+  const list = document.getElementById('convos');
+  list.innerHTML = `
+    <div class="skeleton-row"><div class="skeleton-avatar"></div><div class="skeleton-lines"><div class="skeleton-line w-half"></div><div class="skeleton-line w-long"></div></div></div>
+    <div class="skeleton-row"><div class="skeleton-avatar"></div><div class="skeleton-lines"><div class="skeleton-line w-half"></div><div class="skeleton-line w-short"></div></div></div>
+    <div class="skeleton-row"><div class="skeleton-avatar"></div><div class="skeleton-lines"><div class="skeleton-line w-half"></div><div class="skeleton-line w-long"></div></div></div>
+    <div class="skeleton-row"><div class="skeleton-avatar"></div><div class="skeleton-lines"><div class="skeleton-line w-half"></div><div class="skeleton-line w-short"></div></div></div>
+  `;
+}
+
+async function loadConvos(isBackground = false){
+  if (!isBackground && allConvos.length === 0) {
+    convosLoading = true;
+    renderSkeleton();
+  }
   try{
-    const r=await fetch('/inbox/api/conversations');if(!r.ok)return;
-    const data=await r.json();
-    if(Array.isArray(data)) allConvos=data;
+    const r = await fetch('/inbox/api/conversations');
+    if (r.status === 401) {
+      convosLoading = false;
+      convosError = 'auth';
+      render();
+      return;
+    }
+    if (!r.ok) {
+      convosLoading = false;
+      convosError = 'network';
+      render();
+      return;
+    }
+    const data = await r.json();
+    convosLoading = false;
+    convosError = null;
+    if(Array.isArray(data)) allConvos = data;
     if(cur){const c=allConvos.find(x=>x.phone===cur);if(c && seen[cur]!==c.lastAt){seen[cur]=c.lastAt;saveSeen();}}
     render();
-  }catch(e){}
+  } catch(e) {
+    convosLoading = false;
+    // If we already have conversations loaded, don't overwrite the screen on background poll failure
+    if (allConvos.length === 0) {
+      convosError = 'network';
+    }
+    render();
+  }
 }
 
 function render(){
-  const q=(document.getElementById('search').value||'').toLowerCase();
-  const list=document.getElementById('convos');list.innerHTML='';
+  const list = document.getElementById('convos');
+  if (convosLoading && allConvos.length === 0) {
+    renderSkeleton();
+    return;
+  }
+
+  if (convosError === 'auth') {
+    list.innerHTML = `
+      <div class="convos-status-box">
+        <div class="convos-status-icon">🔒</div>
+        <div class="convos-status-title">Session Expired</div>
+        <div class="convos-status-desc">Please reload the page to sign back in.</div>
+        <button class="convos-status-btn" onclick="window.location.reload()">Reload</button>
+      </div>`;
+    return;
+  }
+
+  if (convosError === 'network' && allConvos.length === 0) {
+    list.innerHTML = `
+      <div class="convos-status-box">
+        <div class="convos-status-icon">⚠️</div>
+        <div class="convos-status-title">Unable to Connect</div>
+        <div class="convos-status-desc">Could not retrieve conversations from server.</div>
+        <button class="convos-status-btn" onclick="loadConvos()">Retry</button>
+      </div>`;
+    return;
+  }
+
+  const q = (document.getElementById('search').value || '').toLowerCase();
+  list.innerHTML = '';
   
-  let filtered=allConvos.filter(c=>!q||(c.name||'').toLowerCase().includes(q)||c.phone.includes(q));
-  filtered.sort((a,b)=>{
-    if((!!b.needsHuman) - (!!a.needsHuman)!==0) return (b.needsHuman?1:0)-(a.needsHuman?1:0);
-    return (b.lastAt||'').localeCompare(a.lastAt||'');
+  let filtered = allConvos.filter(c => !q || (c.name || '').toLowerCase().includes(q) || c.phone.includes(q));
+  filtered.sort((a, b) => {
+    if ((!!b.needsHuman) - (!!a.needsHuman) !== 0) return (b.needsHuman ? 1 : 0) - (a.needsHuman ? 1 : 0);
+    return (b.lastAt || '').localeCompare(a.lastAt || '');
   });
   
-  const needHuman=filtered.filter(c=>c.needsHuman);
-  const rest=filtered.filter(c=>!c.needsHuman);
+  const needHuman = filtered.filter(c => c.needsHuman);
+  const rest = filtered.filter(c => !c.needsHuman);
   
   function renderRow(c){
-    const unread=seen[c.phone]!==c.lastAt && c.phone!==cur;
-    const d=document.createElement('div');
-    d.className='convo'+(c.phone===cur?' active':'')+(c.needsHuman?' needs-human':'');
+    const unread = seen[c.phone] !== c.lastAt && c.phone !== cur;
+    const d = document.createElement('div');
+    d.className = 'convo' + (c.phone === cur ? ' active' : '') + (c.needsHuman ? ' needs-human' : '');
     
-    let tags='';
-    if(c.needsHuman) tags+='<span class="tag tag-human">🙋 Needs you</span>';
-    if(c.tour && c.tour.tourName) tags+=`<span class="tag tag-tour">${esc(c.tour.tourName.slice(0,22))}${c.tour.pax?' · '+c.tour.pax+'p':''}</span>`;
+    let tags = '';
+    if (c.needsHuman) tags += '<span class="tag tag-human">🙋 Needs you</span>';
+    if (c.tour && c.tour.tourName) tags += `<span class="tag tag-tour">${esc(c.tour.tourName.slice(0, 22))}${c.tour.pax ? ' · ' + c.tour.pax + 'p' : ''}</span>`;
     
     const isOut = c.lastDir === 'outbound';
     
-    d.innerHTML=`
-      <div class="avatar">${esc(initials(c.name||c.phone))}${c.needsHuman?'<span class="dot"></span>':''}</div>
+    d.innerHTML = `
+      <div class="avatar">${esc(initials(c.name || c.phone))}${c.needsHuman ? '<span class="dot"></span>' : ''}</div>
       <div class="convo-body">
         <div class="convo-top">
-          <span class="convo-name">${esc(c.name||c.phone)}</span>
+          <span class="convo-name">${esc(c.name || c.phone)}</span>
           <span class="convo-time">${relTime(c.lastAt)}</span>
         </div>
         <div class="convo-prev">
-          <span class="convo-prev-text">${isOut && !String(c.preview||'').startsWith('You:') ? '<span class="sender-you">You:</span> ' : ''}${esc((c.preview||'').slice(0,50))}</span>
-          ${unread?'<span class="unread-dot"></span>':''}
+          <span class="convo-prev-text">${isOut && !String(c.preview || '').startsWith('You:') ? '<span class="sender-you">You:</span> ' : ''}${esc((c.preview || '').slice(0, 50))}</span>
+          ${unread ? '<span class="unread-dot"></span>' : ''}
         </div>
-        ${tags?`<div class="tags">${tags}</div>`:''}
+        ${tags ? `<div class="tags">${tags}</div>` : ''}
       </div>`;
-    d.onclick=()=>openChat(c.phone,c.name);
+    d.onclick = () => openChat(c.phone, c.name);
     list.appendChild(d);
   }
   
-  if(needHuman.length){
-    const lbl=document.createElement('div');lbl.className='section-label needs-attention';lbl.innerText='Needs Attention';list.appendChild(lbl);
+  if (needHuman.length) {
+    const lbl = document.createElement('div'); lbl.className = 'section-label needs-attention'; lbl.innerText = 'Needs Attention'; list.appendChild(lbl);
     needHuman.forEach(renderRow);
   }
-  if(rest.length){
-    if(needHuman.length){const lbl=document.createElement('div');lbl.className='section-label';lbl.innerText='All Chats';list.appendChild(lbl);}
+  if (rest.length) {
+    if (needHuman.length) { const lbl = document.createElement('div'); lbl.className = 'section-label'; lbl.innerText = 'All Chats'; list.appendChild(lbl); }
     rest.forEach(renderRow);
   }
-  if(!filtered.length){
-    const empty=document.createElement('div');empty.style.padding='40px 20px';empty.style.color='var(--muted)';empty.style.textAlign='center';empty.innerText='No conversations found.';list.appendChild(empty);
+  if (!filtered.length) {
+    const empty = document.createElement('div');
+    empty.className = 'convos-status-box';
+    if (allConvos.length === 0) {
+      empty.innerHTML = `
+        <div class="convos-status-icon">💬</div>
+        <div class="convos-status-title">No conversations yet</div>
+        <div class="convos-status-desc">Inbound WhatsApp inquiries will appear here automatically.</div>
+      `;
+    } else {
+      empty.innerHTML = `
+        <div class="convos-status-icon">🔍</div>
+        <div class="convos-status-title">No results</div>
+        <div class="convos-status-desc">No conversations matched your search query.</div>
+      `;
+    }
+    list.appendChild(empty);
   }
 }
 
@@ -943,7 +1060,7 @@ document.querySelectorAll('.quick button').forEach(b=>b.onclick=()=>{
 });
 
 loadConvos();
-setInterval(()=>{loadConvos();if(cur)loadMsgs();},5000);
+setInterval(()=>{loadConvos(true);if(cur)loadMsgs();},8000);
 
 // Deep link
 const params=new URLSearchParams(location.search);
