@@ -9,7 +9,7 @@ const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
+const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY;
 const OPERATOR_ID = process.env.OPERATOR_ID || 'ar_tours';
 
 const supabase = (SUPABASE_URL && SUPABASE_SECRET_KEY)
@@ -121,15 +121,26 @@ async function listBookings() {
 }
 
 async function getBookingsForPhone(phone) {
-  const normalised = String(phone).replace(/[^0-9]/g, '');
+  const raw = String(phone || '').trim();
+  const digits = raw.replace(/[^0-9]/g, '');
+  const phonesSet = new Set();
+  if (digits) {
+    phonesSet.add(digits);
+    if (digits.startsWith('61') && digits.length === 11) {
+      phonesSet.add('0' + digits.slice(2));
+    } else if (digits.startsWith('0') && digits.length === 10) {
+      phonesSet.add('61' + digits.slice(1));
+    }
+  }
+  const phones = Array.from(phonesSet);
   if (!supabase) {
-    return (await listBookings()).filter(b => b.phone === normalised);
+    return (await listBookings()).filter(b => phones.includes(b.phone));
   }
   try {
     const { data, error } = await supabase
       .from('bokun_bookings')
       .select('*')
-      .eq('phone', normalised)
+      .in('phone', phones)
       .order('created_at', { ascending: false });
     if (error || !data) return [];
     return data.map(row => ({

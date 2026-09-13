@@ -12,7 +12,7 @@ require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
+const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY;
 const OPERATOR_ID = process.env.OPERATOR_ID || 'ar_tours';
 
 const supabase = (SUPABASE_URL && SUPABASE_SECRET_KEY)
@@ -21,6 +21,46 @@ const supabase = (SUPABASE_URL && SUPABASE_SECRET_KEY)
 
 if (!supabase) {
   console.warn('inbox.js: SUPABASE_URL / SUPABASE_SECRET_KEY not set — chat history will not persist across restarts.');
+}
+
+// Generate all standard variants of a phone number (e.g., +61400040043, 61400040043, 0400040043)
+// so queries match regardless of whether phone has leading +, no +, spaces, or URL encoding quirks.
+function getPhoneVariants(phone) {
+  if (!phone) return [];
+  let raw = String(phone).trim();
+  for (let i = 0; i < 3 && raw.includes('%'); i++) {
+    try {
+      const d = decodeURIComponent(raw);
+      if (d === raw) break;
+      raw = d;
+    } catch (e) {
+      break;
+    }
+  }
+  raw = raw.replace(/^[\s+]+/, '+');
+  const digits = raw.replace(/[^0-9]/g, '');
+  const set = new Set();
+  if (digits) {
+    set.add(digits);
+    set.add('+' + digits);
+    // Australian phone format handling: +614XXXXXXXX <-> 04XXXXXXXX
+    if (digits.startsWith('61') && digits.length === 11) {
+      set.add('0' + digits.slice(2));
+      set.add('+61' + digits.slice(2));
+    } else if (digits.startsWith('0') && digits.length === 10) {
+      set.add('61' + digits.slice(1));
+      set.add('+61' + digits.slice(1));
+    }
+  }
+  if (raw && !set.has(raw)) set.add(raw);
+  return Array.from(set).filter(Boolean);
+}
+
+// In PostgREST, string filter values containing special characters like '+' MUST be
+// enclosed in double quotes (e.g. "+61400040043"). Otherwise, unquoted '+' triggers
+// PGRST100 syntax errors in query strings.
+function toPostgrestInList(variants) {
+  return Array.from(new Set(variants)).map(v => (/[^0-9a-zA-Z_-]/.test(v) ? `"${v.replace(/"/g, '')}"` : v));
 }
 
 // In-memory fallback so the app doesn't crash if Supabase env vars are
@@ -68,8 +108,7 @@ async function record(phone, name, direction, body, messageId = null) {
 async function listConversations() {
   if (!supabase) {
     return Array.from(fallback.conversations.entries()).map(([phone, c]) => {
-      const clean = String(phone || '').replace(/[^0-9]/g, '');
-      const phones = Array.from(new Set([phone, clean, '+' + clean].filter(Boolean)));
+      const phones = getPhoneVariants(phone);
       const msgs = fallback.messages.filter(m => phones.includes(m.phone));
       const lastMsg = msgs.length ? msgs[msgs.length - 1] : null;
       const preview = lastMsg ? (lastMsg.dir === 'outbound' ? `You: ${lastMsg.body}` : lastMsg.body) : '';
@@ -94,8 +133,7 @@ async function listConversations() {
     const allPhones = [];
     const phoneToOriginal = new Map();
     for (const c of convos) {
-      const clean = String(c.phone || '').replace(/[^0-9]/g, '');
-      const variants = Array.from(new Set([c.phone, clean, '+' + clean].filter(Boolean)));
+      const variants = getPhoneVariants(c.phone);
       for (const v of variants) {
         allPhones.push(v);
         phoneToOriginal.set(v, c.phone);
@@ -108,7 +146,7 @@ async function listConversations() {
       const { data: recentMsgs, error: msgErr } = await supabase
         .from('messages')
         .select('phone, body, dir, at')
-        .in('phone', allPhones)
+        .in('phone', toPostgrestInList(allPhones))
         .order('at', { ascending: false })
         .limit(Math.min(allPhones.length * 3, 200));
 
@@ -145,8 +183,7 @@ async function listConversations() {
 }
 
 async function getMessages(phone) {
-  const clean = String(phone || '').replace(/[^0-9]/g, '');
-  const phones = Array.from(new Set([phone, clean, '+' + clean].filter(Boolean)));
+  const phones = getPhoneVariants(phone);
 
   if (!supabase) {
     return fallback.messages.filter(m => phones.includes(m.phone)).map(m => {
@@ -154,10 +191,11 @@ async function getMessages(phone) {
       return { dir: m.dir, body: m.body, at: m.at, media: mediaList.map(med => ({ id: med.id, type: med.type, mime: med.mime, size: med.size, filename: med.filename })) };
     });
   }
+  const postgrestPhones = toPostgrestInList(phones);
   const { data: msgs, error } = await supabase
     .from('messages')
     .select('dir, body, at, message_id')
-    .in('phone', phones)
+    .in('phone', postgrestPhones)
     .order('at', { ascending: true })
     .limit(500);
   if (error) { console.warn('getMessages error:', error.message); return []; }
@@ -166,7 +204,7 @@ async function getMessages(phone) {
   const { data: mediaItems } = await supabase
     .from('media')
     .select('message_id, media_id, type, mime, size, filename')
-    .in('phone', phones);
+    .in('phone', postgrestPhones);
 
   const mediaMap = new Map();
   (mediaItems || []).forEach(item => {
@@ -219,13 +257,17 @@ async function setBusinessNumber(phone, businessNumberId) {
 }
 
 async function getBusinessNumber(phone) {
+  const phones = getPhoneVariants(phone);
   if (!supabase) {
-    const c = fallback.conversations.get(phone);
-    return c ? c.businessNumberId || null : null;
+    for (const p of phones) {
+      const c = fallback.conversations.get(p);
+      if (c?.businessNumberId) return c.businessNumberId;
+    }
+    return null;
   }
-  const { data, error } = await supabase.from('conversations').select('business_number_id').eq('phone', phone).maybeSingle();
-  if (error || !data) return null;
-  return data.business_number_id || null;
+  const { data, error } = await supabase.from('conversations').select('business_number_id').in('phone', toPostgrestInList(phones)).limit(1);
+  if (error || !data || !data.length) return null;
+  return data[0].business_number_id || null;
 }
 
 // --- Web push subscriptions ---

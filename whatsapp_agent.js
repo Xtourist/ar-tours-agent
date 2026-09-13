@@ -306,7 +306,8 @@ app.get('/inbox/api/bokun-bookings', inboxAuth, async (req, res) => {
 res.json(await bokun.listBookings());
 });
 app.get('/inbox/api/conversations/:phone/bokun-bookings', inboxAuth, async (req, res) => {
-res.json(await bokun.getBookingsForPhone(req.params.phone));
+  const phone = String(req.params.phone || '').trim().replace(/^ /, '+');
+  res.json(await bokun.getBookingsForPhone(phone));
 });
 
 async function handleMediaMessage(phoneNumber, userName, msgId, mediaType, mediaObj, businessNumberId) {
@@ -893,10 +894,11 @@ res.json({ ok: true });
 // 12h auto-resume window. This is the fix for handoff tags staying stuck
 // after you've already replied to a customer.
 app.post('/inbox/api/conversations/:phone/mark-handled', inboxAuth, (req, res) => {
-humanHandoff.delete(req.params.phone);
-inbox.removeHandoff(req.params.phone).catch(() => {});
-console.log(`Handoff cleared via inbox "Mark as handled" for ${req.params.phone}`);
-res.json({ ok: true });
+  const phone = String(req.params.phone || '').trim().replace(/^ /, '+');
+  humanHandoff.delete(phone);
+  inbox.removeHandoff(phone).catch(() => {});
+  console.log(`Handoff cleared via inbox "Mark as handled" for ${phone}`);
+  res.json({ ok: true });
 });
 app.get('/inbox/api/conversations', inboxAuth, async (req, res) => {
   try {
@@ -927,26 +929,28 @@ app.get('/inbox/api/conversations', inboxAuth, async (req, res) => {
 // Lightweight endpoint just for handoff status (used to refresh needsHuman
 // flags on poll without re-fetching full conversation list every time).
 app.get('/inbox/api/handoff-status', inboxAuth, (req, res) => {
-const list = Array.from(humanHandoff.keys());
-res.json({ phones: list });
+  const list = Array.from(humanHandoff.keys());
+  res.json({ phones: list });
 });
 app.get('/inbox/api/conversations/:phone/messages', inboxAuth, async (req, res) => {
-res.json(await inbox.getMessages(req.params.phone));
+  const phone = String(req.params.phone || '').trim().replace(/^ /, '+');
+  res.json(await inbox.getMessages(phone));
 });
 app.get('/inbox/api/conversations/:phone/window', inboxAuth, async (req, res) => {
-res.json({ open: await inbox.isWindowOpen(req.params.phone) });
+  const phone = String(req.params.phone || '').trim().replace(/^ /, '+');
+  res.json({ open: await inbox.isWindowOpen(phone) });
 });
 app.post('/inbox/api/conversations/:phone/reply', inboxAuth, async (req, res) => {
-const { phone } = req.params;
-const { body } = req.body;
-if (!body || !body.trim()) return res.status(400).json({ error: 'empty' });
-if (!(await inbox.isWindowOpen(phone))) {
-return res.status(409).json({ error: 'window_closed', message: 'This customer has not messaged in the last 24 hours, so WhatsApp blocks free-text replies. You would need an approved template message instead.' });
-}
-// Sending manually implies a human is handling this chat: pause the bot for them.
-startHandoff(phone, 'human replied from inbox', { silent: true }).catch(() => {});
-await sendWhatsAppMessage(phone, body);
-res.json({ ok: true });
+  const phone = String(req.params.phone || '').trim().replace(/^ /, '+');
+  const { body } = req.body;
+  if (!body || !body.trim()) return res.status(400).json({ error: 'empty' });
+  if (!(await inbox.isWindowOpen(phone))) {
+    return res.status(409).json({ error: 'window_closed', message: 'This customer has not messaged in the last 24 hours, so WhatsApp blocks free-text replies. You would need an approved template message instead.' });
+  }
+  // Sending manually implies a human is handling this chat: pause the bot for them.
+  startHandoff(phone, 'human replied from inbox', { silent: true }).catch(() => {});
+  await sendWhatsAppMessage(phone, body);
+  res.json({ ok: true });
 });
 
 app.listen(PORT, () => {
