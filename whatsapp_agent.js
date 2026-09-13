@@ -110,8 +110,8 @@ function isInHandoff(phoneNumber) {
     const entry = humanHandoff.get(v);
     if (entry) {
       if (Date.now() - entry.since > HANDOFF_DURATION_MS) {
-        humanHandoff.delete(v);
-        inbox.removeHandoff(v).catch(() => {});
+        for (const rem of checkList) humanHandoff.delete(rem);
+        inbox.removeHandoff(phoneNumber).catch(() => {});
         return false;
       }
       return true;
@@ -707,6 +707,7 @@ console.error('Error sending message:', error.response ? JSON.stringify(error.re
 // {{2}}, etc. placeholders, in order.
 async function sendWhatsAppTemplate(phoneNumber, templateName, languageCode, bodyParams = [], fromNumberId) {
 const senderId = fromNumberId || process.env.PHONE_NUMBER_ID;
+const toDigits = String(phoneNumber || '').replace(/[^0-9]/g, '');
 const components = bodyParams.length
 ? [{ type: 'body', parameters: bodyParams.map(p => ({ type: 'text', text: String(p) })) }]
 : [];
@@ -714,7 +715,7 @@ await axios.post(
 `https://graph.facebook.com/${GRAPH_API_VERSION}/${senderId}/messages`,
 {
 messaging_product: 'whatsapp',
-to: phoneNumber,
+to: toDigits,
 type: 'template',
 template: {
 name: templateName,

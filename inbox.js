@@ -62,7 +62,13 @@ function getPhoneVariants(phone) {
 // enclosed in double quotes (e.g. "+61400040043"). Otherwise, unquoted '+' triggers
 // PGRST100 syntax errors in query strings.
 function toPostgrestInList(variants) {
-  return Array.from(new Set(variants)).map(v => (/[^0-9a-zA-Z_-]/.test(v) ? `"${v.replace(/"/g, '')}"` : v));
+  if (!variants || !Array.isArray(variants)) return [];
+  return Array.from(new Set(variants))
+    .filter(v => v !== null && v !== undefined && String(v).trim().length > 0)
+    .map(v => {
+      const s = String(v).replace(/"/g, '').trim();
+      return /[^0-9a-zA-Z_-]/.test(s) ? `"${s}"` : s;
+    });
 }
 
 // In-memory fallback so the app doesn't crash if Supabase env vars are
@@ -191,17 +197,20 @@ async function getMessages(phone) {
   if (!phones || phones.length === 0) return [];
 
   if (!supabase) {
-    return fallback.messages.filter(m => phones.includes(m.phone) || (m.phone && phones.includes(m.phone.replace(/[^0-9]/g, '')))).map(m => {
+    const matched = fallback.messages.filter(m => phones.includes(m.phone) || (m.phone && phones.includes(m.phone.replace(/[^0-9]/g, ''))));
+    const recent = matched.slice(-500);
+    return recent.map(m => {
       const mediaList = fallback.media.filter(med => (phones.includes(med.phone) || (med.phone && phones.includes(med.phone.replace(/[^0-9]/g, '')))) && med.messageId && med.messageId === m.message_id);
       return { dir: m.dir, body: m.body, at: m.at, media: mediaList.map(med => ({ id: med.id, type: med.type, mime: med.mime, size: med.size, filename: med.filename })) };
     });
   }
   const postgrestPhones = toPostgrestInList(phones);
+  if (!postgrestPhones.length) return [];
   const { data: msgs, error } = await supabase
     .from('messages')
     .select('dir, body, at, message_id')
     .in('phone', postgrestPhones)
-    .order('at', { ascending: true })
+    .order('at', { ascending: false })
     .limit(500);
   if (error) { console.warn('getMessages error:', error.message); return []; }
 
@@ -225,7 +234,8 @@ async function getMessages(phone) {
     }
   });
 
-  return (msgs || []).map(m => ({
+  const chronological = (msgs || []).slice().reverse();
+  return chronological.map(m => ({
     dir: m.dir,
     body: m.body,
     at: m.at,
@@ -240,7 +250,7 @@ async function isWindowOpen(phone) {
   for (let i = msgs.length - 1; i >= 0; i--) {
     if (msgs[i].dir === 'inbound') {
       const diffH = (Date.now() - new Date(msgs[i].at).getTime()) / 36e5;
-      return diffH <= 24;
+      return !isNaN(diffH) && diffH >= -1 && diffH <= 24;
     }
   }
   return false;

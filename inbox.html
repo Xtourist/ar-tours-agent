@@ -640,6 +640,7 @@ textarea.field { resize: vertical; min-height: 80px; }
 <script>
 let cur=null, allConvos=[];
 let seen={};
+let currentChatRequestId=0;
 try{seen=JSON.parse(localStorage.getItem('ar_inbox_seen')||'{}');}catch(e){seen={};}
 function saveSeen(){try{localStorage.setItem('ar_inbox_seen',JSON.stringify(seen));}catch(e){}}
 
@@ -865,22 +866,51 @@ function render(){
 let currentCustomerEmail = '';
 
 async function openChat(phone,name){
-  cur=phone;
+  const reqId = ++currentChatRequestId;
+  const normPhone = phone ? String(phone).replace(/^ /, '+').trim() : '';
+  cur = normPhone;
   currentCustomerEmail='';
-  const c=allConvos.find(x=>matchPhone(x.phone, phone));
+  const c=allConvos.find(x=>matchPhone(x.phone, normPhone));
   if(c){seen[c.phone]=c.lastAt;saveSeen();}
   document.getElementById('app').classList.add('show-chat');
   document.getElementById('chatHead').style.display='flex';
   document.getElementById('composer').style.display='flex';
   document.getElementById('quick').style.display='flex';
   
-  const displayName = name||(c&&c.name)||phone;
-  const cleanDigits = phoneDigits(phone);
-  const e164 = cleanDigits ? (cleanDigits.startsWith('0') && cleanDigits.length === 10 ? '+61' + cleanDigits.slice(1) : '+' + cleanDigits) : '';
-  const displayPhone = e164 || phone;
+  const displayName = name||(c&&c.name)||normPhone;
+  const e164 = formatE164(normPhone);
+  const displayPhone = e164 || normPhone;
   document.getElementById('chAvatar').innerText=initials(displayName);
   document.getElementById('chName').innerText=displayName;
   document.getElementById('chPhone').innerText=displayPhone;
+  
+  // Reset immediate UI states to avoid stale conversation data flashing
+  const pill=document.getElementById('chStatus');
+  pill.className='status-pill';
+  pill.innerText='...';
+  const humanTag=document.getElementById('chHumanTag');
+  const handledBtn=document.getElementById('handledBtn');
+  if(c && c.needsHuman){
+    if(humanTag) humanTag.style.display='inline-block';
+    if(handledBtn) handledBtn.style.display='inline-block';
+  }else{
+    if(humanTag) humanTag.style.display='none';
+    if(handledBtn) handledBtn.style.display='none';
+  }
+  document.getElementById('warn').style.display='none';
+  const sendBtn=document.getElementById('send');
+  const inp=document.getElementById('input');
+  sendBtn.disabled=false;
+  inp.disabled=false;
+  inp.placeholder='Type a message';
+  
+  // Immediate message loading skeleton
+  const msgsBox = document.getElementById('msgs');
+  msgsBox.innerHTML = `
+    <div class="skeleton-row" style="margin:20px 0;"><div class="skeleton-lines"><div class="skeleton-line w-half"></div><div class="skeleton-line w-long"></div></div></div>
+    <div class="skeleton-row" style="margin:20px 0;flex-direction:row-reverse;"><div class="skeleton-lines" style="align-items:flex-end;"><div class="skeleton-line w-short"></div><div class="skeleton-line w-half"></div></div></div>
+    <div class="skeleton-row" style="margin:20px 0;"><div class="skeleton-lines"><div class="skeleton-line w-long"></div><div class="skeleton-line w-short"></div></div></div>
+  `;
   
   // Populate contact info
   document.getElementById('ciAvatar').innerText=initials(displayName);
@@ -892,7 +922,7 @@ async function openChat(phone,name){
     if (e && e.preventDefault) e.preventDefault();
     if(e164) {
       toast(`Calling ${e164}...`);
-      const btn = e && (e.currentTarget || e.target);
+      const btn = (e && e.currentTarget) || (e && e.target) || document.getElementById('chCallBtn');
       if (btn && btn.classList) {
         btn.classList.add('btn-active-feedback');
         setTimeout(() => btn.classList.remove('btn-active-feedback'), 500);
@@ -919,11 +949,11 @@ async function openChat(phone,name){
   document.getElementById('ciTags').innerHTML = ciTags || '<span class="ci-label">No tags</span>';
   
   render();
-  await Promise.all([loadBokunCard(), loadMsgs()]);
+  await Promise.all([loadBokunCard(reqId), loadMsgs(reqId)]);
   setTimeout(()=>document.getElementById('input').focus(), 100);
 }
 
-async function loadBokunCard(){
+async function loadBokunCard(reqId){
   if(!cur) return;
   const chatPhone = cur;
   const holder=document.getElementById('bokunCard');holder.innerHTML='';
@@ -932,9 +962,11 @@ async function loadBokunCard(){
   
   try{
     const r=await fetch('/inbox/api/conversations/'+encodeURIComponent(cur)+'/bokun-bookings');
+    if(reqId !== undefined && reqId !== currentChatRequestId) return;
     if(cur !== chatPhone) return;
     if(!r.ok)return;
     const bookings=await r.json();
+    if(reqId !== undefined && reqId !== currentChatRequestId) return;
     if(cur !== chatPhone) return;
     if(!bookings || !bookings.length) return;
     const b=bookings[0];
@@ -961,7 +993,7 @@ async function loadBokunCard(){
   }catch(e){/* ignore */}
 }
 
-async function loadMsgs(){
+async function loadMsgs(reqId){
   if(!cur)return;
   const chatPhone = cur;
   const box=document.getElementById('msgs');
@@ -971,19 +1003,22 @@ async function loadMsgs(){
   try {
     const [r, w] = await Promise.all([
       fetch('/inbox/api/conversations/'+encodeURIComponent(cur)+'/messages'),
-      fetch('/inbox/api/conversations/'+encodeURIComponent(cur)+'/window').then(res=>res.json()).catch(()=>({open:true}))
+      fetch('/inbox/api/conversations/'+encodeURIComponent(cur)+'/window').then(res=>res.ok ? res.json() : {open:true}).catch(()=>({open:true}))
     ]);
+    if(reqId !== undefined && reqId !== currentChatRequestId) return;
     if(cur !== chatPhone) return;
     if(!r.ok) throw new Error('HTTP ' + r.status);
     ms = await r.json();
     wr = w || { open: true };
   } catch(err) {
+    if(reqId !== undefined && reqId !== currentChatRequestId) return;
     if(cur !== chatPhone) return;
     console.error('loadMsgs error:', err);
     box.innerHTML=`<div class="empty" style="color:var(--muted)"><div>Could not load messages. Retrying...</div></div>`;
     return;
   }
   
+  if(reqId !== undefined && reqId !== currentChatRequestId) return;
   if(cur !== chatPhone) return;
   box.innerHTML='';
   let lastDay='';
@@ -1039,13 +1074,30 @@ async function loadMsgs(){
   
   if(convo && convo.needsHuman){
     if(humanTag) humanTag.style.display='inline-block';
-    handledBtn.style.display='inline-block';
+    if(handledBtn) handledBtn.style.display='inline-block';
   }else{
     if(humanTag) humanTag.style.display='none';
-    handledBtn.style.display='none';
+    if(handledBtn) handledBtn.style.display='none';
   }
 
-  if(wr.open){
+  // Robust 24h window calculation: if ms has an inbound message within 24h, it is definitely open
+  let windowOpen = false;
+  if(Array.isArray(ms) && ms.length > 0){
+    for(let i = ms.length - 1; i >= 0; i--){
+      if(ms[i].dir === 'inbound' && ms[i].at){
+        const diffH = (Date.now() - new Date(ms[i].at).getTime()) / 36e5;
+        if(!isNaN(diffH) && diffH >= -1 && diffH <= 24){
+          windowOpen = true;
+          break;
+        }
+      }
+    }
+  }
+  if(!windowOpen && wr && wr.open === true){
+    windowOpen = true;
+  }
+
+  if(windowOpen){
     pill.className='status-pill pill-open';pill.innerText='● Open (24h)';
   }else{
     pill.className='status-pill pill-closed';pill.innerText='● Closed';
@@ -1055,7 +1107,7 @@ async function loadMsgs(){
   const sendBtn = document.getElementById('send');
   const inp = document.getElementById('input');
   
-  if(!wr.open){
+  if(!windowOpen){
     warn.style.display='block';
     warn.innerText='24h window closed. WhatsApp requires an approved template for new messages.';
     sendBtn.disabled=true;
@@ -1122,11 +1174,12 @@ setInterval(()=>{loadConvos(true);if(cur)loadMsgs();},8000);
 
 // Deep link
 const params=new URLSearchParams(location.search);
-const openPhone=params.get('open') || params.get('chat') || params.get('phone');
-if(openPhone){
+const rawOpenPhone=params.get('open') || params.get('chat') || params.get('phone');
+if(rawOpenPhone){
+  const openPhone = rawOpenPhone.replace(/^ /, '+').trim();
   loadConvos().then(()=>{
     const c=allConvos.find(x=>matchPhone(x.phone, openPhone));
-    openChat(openPhone, c?c.name:openPhone);
+    openChat(c ? c.phone : openPhone, c ? c.name : openPhone);
   });
 }
 

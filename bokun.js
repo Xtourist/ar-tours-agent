@@ -7,6 +7,7 @@
 require('dotenv').config();
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
+const { toPostgrestInList } = require('./inbox');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY;
@@ -153,7 +154,8 @@ async function getBookingsForPhone(phone) {
     return (await listBookings()).filter(b => phones.includes(b.phone) || (digits && b.phone && b.phone.replace(/[^0-9]/g, '') === digits));
   }
   try {
-    const postgrestPhones = phones.map(p => (/[^0-9a-zA-Z_-]/.test(p) ? `"${p.replace(/"/g, '')}"` : p));
+    const postgrestPhones = toPostgrestInList(phones);
+    if (!postgrestPhones.length) return [];
     const { data, error } = await supabase
       .from('bokun_bookings')
       .select('*')
