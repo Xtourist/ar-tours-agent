@@ -3,6 +3,8 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
+const http = require('http');
+const { Socket } = require('net');
 const { createClient } = require('@supabase/supabase-js');
 
 const inbox = require('./inbox');
@@ -33,6 +35,50 @@ async function asyncTest(name, fn) {
   }
 }
 
+// In-process Express route dispatcher.
+// Executes full Express routing, middleware, parameter decoding, and response generation
+// without opening TCP sockets, preventing sandbox EPERM and proxy interference.
+function invokeExpress(app, method, url, body = null) {
+  return new Promise((resolve, reject) => {
+    const socket = new Socket();
+    const req = new http.IncomingMessage(socket);
+    req.method = method;
+    req.url = url;
+    req.headers = { host: 'localhost' };
+    if (body) {
+      const json = JSON.stringify(body);
+      req.headers['content-type'] = 'application/json';
+      req.headers['content-length'] = Buffer.byteLength(json);
+    }
+
+    const res = new http.ServerResponse(req);
+    const chunks = [];
+    res.write = (chunk) => {
+      if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      return true;
+    };
+    res.end = (chunk) => {
+      if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      const rawBody = Buffer.concat(chunks).toString();
+      let parsed = null;
+      try {
+        parsed = JSON.parse(rawBody);
+      } catch (e) {
+        parsed = rawBody;
+      }
+      resolve({ status: res.statusCode, data: parsed });
+    };
+
+    app.handle(req, res, reject);
+    if (body) {
+      process.nextTick(() => {
+        req.emit('data', Buffer.from(JSON.stringify(body)));
+        req.emit('end');
+      });
+    }
+  });
+}
+
 async function runAllTests() {
   console.log('--- Running Inbox Resolution Test Suite ---\n');
 
@@ -42,10 +88,12 @@ async function runAllTests() {
     assert(v1.includes('61400040043'), 'Must include plain digits');
     assert(v1.includes('+61400040043'), 'Must include + leading format');
     assert(v1.includes('0400040043'), 'Must include AU local format');
+    assert(!v1.includes('+0400040043'), 'Must NOT include invalid +04... format');
 
     const v2 = inbox.getPhoneVariants('61400040043');
     assert(v2.includes('61400040043'));
     assert(v2.includes('+61400040043'));
+    assert(v2.includes('0400040043'));
 
     const v3 = inbox.getPhoneVariants('+61 400 040 043');
     assert(v3.includes('61400040043'));
@@ -53,6 +101,13 @@ async function runAllTests() {
 
     const v4 = inbox.getPhoneVariants(' 61400040043 ');
     assert(v4.includes('61400040043'));
+
+    // Australian local format 04...
+    const vLocal = inbox.getPhoneVariants('0400040043');
+    assert(vLocal.includes('0400040043'));
+    assert(vLocal.includes('61400040043'));
+    assert(vLocal.includes('+61400040043'));
+    assert(!vLocal.includes('+0400040043'), 'Local 04 must not produce +04 prefix');
 
     // URL encoded %2B and double encoded %252B
     const v5 = inbox.getPhoneVariants('%2B61400040043');
@@ -62,10 +117,13 @@ async function runAllTests() {
     const v6 = inbox.getPhoneVariants('%252B61400040043');
     assert(v6.includes('61400040043'), 'Must handle double-encoded %252B');
 
-    // Edge cases: null, undefined, empty
+    // Edge cases: null, undefined, empty, spaces, plus only
     assert.deepStrictEqual(inbox.getPhoneVariants(''), []);
     assert.deepStrictEqual(inbox.getPhoneVariants(null), []);
     assert.deepStrictEqual(inbox.getPhoneVariants(undefined), []);
+    assert.deepStrictEqual(inbox.getPhoneVariants('   '), []);
+    assert.deepStrictEqual(inbox.getPhoneVariants('+'), []);
+    assert.deepStrictEqual(inbox.getPhoneVariants('+++'), []);
   });
 
   // Test 2: PostgREST filter encoding eliminates raw plus signs
@@ -105,12 +163,23 @@ async function runAllTests() {
     const msgs4 = await inbox.getMessages(' 61499988877 ');
     assert.strictEqual(msgs4.length, 2, 'Should find messages with spaces');
 
+    // Edge cases: empty/whitespace should safely return [] without error
+    const msgsEmpty = await inbox.getMessages('');
+    assert.deepStrictEqual(msgsEmpty, []);
+    const msgsSpaces = await inbox.getMessages('   ');
+    assert.deepStrictEqual(msgsSpaces, []);
+    const msgsPlus = await inbox.getMessages('+');
+    assert.deepStrictEqual(msgsPlus, []);
+
     // 24h window test
     const isOpen = await inbox.isWindowOpen('+61499988877');
     assert.strictEqual(isOpen, true, 'Window should be open when recent inbound message exists');
 
     const isOpenEncoded = await inbox.isWindowOpen('%2B61499988877');
     assert.strictEqual(isOpenEncoded, true, 'Window check should work with URL-encoded phone');
+
+    const isOpenEmpty = await inbox.isWindowOpen('');
+    assert.strictEqual(isOpenEmpty, false, 'Window check should return false for empty phone');
   });
 
   // Test 4: Bokun booking retrieval across phone representations
@@ -144,14 +213,19 @@ async function runAllTests() {
 
     const b3 = await bokun.getBookingsForPhone('%2B61411222333');
     assert(b3.length >= 1, 'Should find booking by %2B encoded string');
+
+    const bEmpty = await bokun.getBookingsForPhone('');
+    assert.deepStrictEqual(bEmpty, []);
   });
 
-  // Test 5: Endpoints in express app handle parameters safely
+  // Test 5: Endpoints in express app handle parameters safely and return accurate status
   await asyncTest('R1 & R2: Express API routes handle :phone properly', async () => {
     const app = express();
+    app.use(express.json());
+
     app.get('/inbox/api/conversations/:phone/messages', async (req, res) => {
       try {
-        const phone = String(req.params.phone || '').trim().replace(/^ /, '+');
+        const phone = String(req.params.phone || '').replace(/^ /, '+').trim();
         res.json(await inbox.getMessages(phone));
       } catch (e) {
         res.status(500).json({ error: e.message });
@@ -160,29 +234,76 @@ async function runAllTests() {
 
     app.get('/inbox/api/conversations/:phone/window', async (req, res) => {
       try {
-        const phone = String(req.params.phone || '').trim().replace(/^ /, '+');
+        const phone = String(req.params.phone || '').replace(/^ /, '+').trim();
         res.json({ open: await inbox.isWindowOpen(phone) });
       } catch (e) {
         res.status(500).json({ error: e.message });
       }
     });
 
-    const server = app.listen(0);
-    const port = server.address().port;
-    const axios = require('axios');
+    app.get('/inbox/api/conversations/:phone/bokun-bookings', async (req, res) => {
+      try {
+        const phone = String(req.params.phone || '').replace(/^ /, '+').trim();
+        res.json(await bokun.getBookingsForPhone(phone));
+      } catch (e) {
+        res.status(500).json({ error: e.message });
+      }
+    });
 
-    try {
-      const resMsg = await axios.get(`http://127.0.0.1:${port}/inbox/api/conversations/%2B61499988877/messages`);
-      assert.strictEqual(resMsg.status, 200);
-      assert(Array.isArray(resMsg.data));
-      assert.strictEqual(resMsg.data.length, 2);
+    app.post('/inbox/api/conversations/:phone/mark-handled', async (req, res) => {
+      try {
+        const phone = String(req.params.phone || '').replace(/^ /, '+').trim();
+        await inbox.removeHandoff(phone);
+        res.json({ ok: true });
+      } catch (e) {
+        res.status(500).json({ error: e.message });
+      }
+    });
 
-      const resWin = await axios.get(`http://127.0.0.1:${port}/inbox/api/conversations/%2B61499988877/window`);
-      assert.strictEqual(resWin.status, 200);
-      assert.strictEqual(resWin.data.open, true);
-    } finally {
-      server.close();
-    }
+    app.post('/inbox/api/conversations/:phone/reply', async (req, res) => {
+      try {
+        const phone = String(req.params.phone || '').replace(/^ /, '+').trim();
+        const { body } = req.body || {};
+        if (!body || !body.trim()) return res.status(400).json({ error: 'empty' });
+        if (!(await inbox.isWindowOpen(phone))) {
+          return res.status(409).json({ error: 'window_closed' });
+        }
+        res.json({ ok: true, phone });
+      } catch (e) {
+        res.status(500).json({ error: e.message });
+      }
+    });
+
+    // 1. Fetch messages with %2B encoded phone
+    const resMsg = await invokeExpress(app, 'GET', '/inbox/api/conversations/%2B61499988877/messages');
+    assert.strictEqual(resMsg.status, 200);
+    assert(Array.isArray(resMsg.data));
+    assert.strictEqual(resMsg.data.length, 2);
+
+    // 2. Fetch window status
+    const resWin = await invokeExpress(app, 'GET', '/inbox/api/conversations/%2B61499988877/window');
+    assert.strictEqual(resWin.status, 200);
+    assert.strictEqual(resWin.data.open, true);
+
+    // 3. Fetch bokun bookings
+    const resBokun = await invokeExpress(app, 'GET', '/inbox/api/conversations/%2B61411222333/bokun-bookings');
+    assert.strictEqual(resBokun.status, 200);
+    assert(Array.isArray(resBokun.data));
+    assert(resBokun.data.length >= 1);
+
+    // 4. Mark handled
+    const resHandled = await invokeExpress(app, 'POST', '/inbox/api/conversations/%2B61499988877/mark-handled');
+    assert.strictEqual(resHandled.status, 200);
+    assert.strictEqual(resHandled.data.ok, true);
+
+    // 5. Reply with valid body
+    const resReply = await invokeExpress(app, 'POST', '/inbox/api/conversations/%2B61499988877/reply', { body: 'Looking forward to seeing you!' });
+    assert.strictEqual(resReply.status, 200);
+    assert.strictEqual(resReply.data.ok, true);
+
+    // 6. Reply with empty body
+    const resEmptyReply = await invokeExpress(app, 'POST', '/inbox/api/conversations/%2B61499988877/reply', { body: '' });
+    assert.strictEqual(resEmptyReply.status, 400);
   });
 
   // Test 6: Frontend inbox.html static validation
@@ -207,6 +328,12 @@ async function runAllTests() {
     assert(html.includes("● Closed"), 'Must display ● Closed');
     assert(html.includes('id="chStatus"'), 'Must have status badge #chStatus');
     assert(html.includes('id="chHumanTag"'), 'Must have human tag #chHumanTag');
+
+    // Check that chAvatar does not have duplicate onclick="toggleInfo()"
+    assert(!html.includes('id="chAvatar" onclick="toggleInfo()"'), 'chAvatar must not have inline onclick that double-triggers toggleInfo');
+
+    // Check deep link parameter support
+    assert(html.includes("params.get('chat')"), 'Deep link must support ?chat= parameter');
   });
 
   console.log(`\nAll ${passedTests} tests passed successfully!`);

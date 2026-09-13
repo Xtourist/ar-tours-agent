@@ -104,14 +104,20 @@ return (digits.length >= 13 && digits.length <= 19 && luhnValid(digits)) ? '[CAR
 }
 
 function isInHandoff(phoneNumber) {
-const entry = humanHandoff.get(phoneNumber);
-if (!entry) return false;
-if (Date.now() - entry.since > HANDOFF_DURATION_MS) {
-humanHandoff.delete(phoneNumber);
-inbox.removeHandoff(phoneNumber).catch(() => {});
-return false;
-}
-return true;
+  const variants = inbox.getPhoneVariants ? inbox.getPhoneVariants(phoneNumber) : [phoneNumber];
+  const checkList = variants.length ? variants : [phoneNumber];
+  for (const v of checkList) {
+    const entry = humanHandoff.get(v);
+    if (entry) {
+      if (Date.now() - entry.since > HANDOFF_DURATION_MS) {
+        humanHandoff.delete(v);
+        inbox.removeHandoff(v).catch(() => {});
+        return false;
+      }
+      return true;
+    }
+  }
+  return false;
 }
 
 // Preload active handoffs from Supabase on boot
@@ -307,7 +313,7 @@ res.json(await bokun.listBookings());
 });
 app.get('/inbox/api/conversations/:phone/bokun-bookings', inboxAuth, async (req, res) => {
   try {
-    const phone = String(req.params.phone || '').trim().replace(/^ /, '+');
+    const phone = String(req.params.phone || '').replace(/^ /, '+').trim();
     res.json(await bokun.getBookingsForPhone(phone));
   } catch (err) {
     console.error('Error fetching bokun bookings:', err);
@@ -667,12 +673,13 @@ const GRAPH_API_VERSION = process.env.WHATSAPP_GRAPH_VERSION || 'v21.0';
 // before any inbound message has been recorded for this phone).
 async function sendWhatsAppMessage(phoneNumber, messageText, fromNumberId) {
 const senderId = fromNumberId || (await inbox.getBusinessNumber(phoneNumber)) || process.env.PHONE_NUMBER_ID;
+const toDigits = String(phoneNumber || '').replace(/[^0-9]/g, '');
 try {
 await axios.post(
 `https://graph.facebook.com/${GRAPH_API_VERSION}/${senderId}/messages`,
 {
 messaging_product: 'whatsapp',
-to: phoneNumber,
+to: toDigits,
 type: 'text',
 text: { body: messageText }
 },
@@ -898,12 +905,21 @@ res.json({ ok: true });
 // "Mark as handled" — clears the Needs You flag without waiting the full
 // 12h auto-resume window. This is the fix for handoff tags staying stuck
 // after you've already replied to a customer.
-app.post('/inbox/api/conversations/:phone/mark-handled', inboxAuth, (req, res) => {
-  const phone = String(req.params.phone || '').trim().replace(/^ /, '+');
-  humanHandoff.delete(phone);
-  inbox.removeHandoff(phone).catch(() => {});
-  console.log(`Handoff cleared via inbox "Mark as handled" for ${phone}`);
-  res.json({ ok: true });
+app.post('/inbox/api/conversations/:phone/mark-handled', inboxAuth, async (req, res) => {
+  try {
+    const phone = String(req.params.phone || '').replace(/^ /, '+').trim();
+    const variants = inbox.getPhoneVariants ? inbox.getPhoneVariants(phone) : [phone];
+    for (const v of variants) {
+      humanHandoff.delete(v);
+    }
+    humanHandoff.delete(phone);
+    await inbox.removeHandoff(phone).catch(() => {});
+    console.log(`Handoff cleared via inbox "Mark as handled" for ${phone}`);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error in mark-handled:', err);
+    res.status(500).json({ error: 'Failed to clear handoff', details: err.message });
+  }
 });
 app.get('/inbox/api/conversations', inboxAuth, async (req, res) => {
   try {
@@ -939,7 +955,7 @@ app.get('/inbox/api/handoff-status', inboxAuth, (req, res) => {
 });
 app.get('/inbox/api/conversations/:phone/messages', inboxAuth, async (req, res) => {
   try {
-    const phone = String(req.params.phone || '').trim().replace(/^ /, '+');
+    const phone = String(req.params.phone || '').replace(/^ /, '+').trim();
     res.json(await inbox.getMessages(phone));
   } catch (err) {
     console.error('Error fetching messages in /inbox/api/conversations/:phone/messages:', err);
@@ -948,7 +964,7 @@ app.get('/inbox/api/conversations/:phone/messages', inboxAuth, async (req, res) 
 });
 app.get('/inbox/api/conversations/:phone/window', inboxAuth, async (req, res) => {
   try {
-    const phone = String(req.params.phone || '').trim().replace(/^ /, '+');
+    const phone = String(req.params.phone || '').replace(/^ /, '+').trim();
     res.json({ open: await inbox.isWindowOpen(phone) });
   } catch (err) {
     console.error('Error checking window in /inbox/api/conversations/:phone/window:', err);
@@ -956,16 +972,21 @@ app.get('/inbox/api/conversations/:phone/window', inboxAuth, async (req, res) =>
   }
 });
 app.post('/inbox/api/conversations/:phone/reply', inboxAuth, async (req, res) => {
-  const phone = String(req.params.phone || '').trim().replace(/^ /, '+');
-  const { body } = req.body;
-  if (!body || !body.trim()) return res.status(400).json({ error: 'empty' });
-  if (!(await inbox.isWindowOpen(phone))) {
-    return res.status(409).json({ error: 'window_closed', message: 'This customer has not messaged in the last 24 hours, so WhatsApp blocks free-text replies. You would need an approved template message instead.' });
+  try {
+    const phone = String(req.params.phone || '').replace(/^ /, '+').trim();
+    const { body } = req.body;
+    if (!body || !body.trim()) return res.status(400).json({ error: 'empty' });
+    if (!(await inbox.isWindowOpen(phone))) {
+      return res.status(409).json({ error: 'window_closed', message: 'This customer has not messaged in the last 24 hours, so WhatsApp blocks free-text replies. You would need an approved template message instead.' });
+    }
+    // Sending manually implies a human is handling this chat: pause the bot for them.
+    startHandoff(phone, 'human replied from inbox', { silent: true }).catch(() => {});
+    await sendWhatsAppMessage(phone, body);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Error in reply:', err);
+    res.status(500).json({ error: 'Failed to send reply', details: err.message });
   }
-  // Sending manually implies a human is handling this chat: pause the bot for them.
-  startHandoff(phone, 'human replied from inbox', { silent: true }).catch(() => {});
-  await sendWhatsAppMessage(phone, body);
-  res.json({ ok: true });
 });
 
 app.listen(PORT, () => {

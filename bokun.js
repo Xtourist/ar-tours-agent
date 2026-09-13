@@ -136,7 +136,9 @@ async function getBookingsForPhone(phone) {
   const phonesSet = new Set();
   if (digits) {
     phonesSet.add(digits);
-    phonesSet.add('+' + digits);
+    if (!digits.startsWith('0')) {
+      phonesSet.add('+' + digits);
+    }
     if (digits.startsWith('61') && digits.length === 11) {
       phonesSet.add('0' + digits.slice(2));
       phonesSet.add('+61' + digits.slice(2));
@@ -146,6 +148,7 @@ async function getBookingsForPhone(phone) {
     }
   }
   const phones = Array.from(phonesSet);
+  if (!phones.length) return [];
   if (!supabase) {
     return (await listBookings()).filter(b => phones.includes(b.phone) || (digits && b.phone && b.phone.replace(/[^0-9]/g, '') === digits));
   }

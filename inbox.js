@@ -42,7 +42,9 @@ function getPhoneVariants(phone) {
   const set = new Set();
   if (digits) {
     set.add(digits);
-    set.add('+' + digits);
+    if (!digits.startsWith('0')) {
+      set.add('+' + digits);
+    }
     // Australian phone format handling: +614XXXXXXXX <-> 04XXXXXXXX
     if (digits.startsWith('61') && digits.length === 11) {
       set.add('0' + digits.slice(2));
@@ -52,7 +54,7 @@ function getPhoneVariants(phone) {
       set.add('+61' + digits.slice(1));
     }
   }
-  if (raw && !set.has(raw)) set.add(raw);
+  if (raw && !set.has(raw) && /[0-9a-zA-Z]/.test(raw)) set.add(raw);
   return Array.from(set).filter(Boolean);
 }
 
@@ -142,27 +144,29 @@ async function listConversations() {
 
     // Attempt single batch query to get recent messages across these phones
     const previewMap = new Map();
-    try {
-      const { data: recentMsgs, error: msgErr } = await supabase
-        .from('messages')
-        .select('phone, body, dir, at')
-        .in('phone', toPostgrestInList(allPhones))
-        .order('at', { ascending: false })
-        .limit(Math.min(allPhones.length * 3, 200));
+    if (allPhones.length > 0) {
+      try {
+        const { data: recentMsgs, error: msgErr } = await supabase
+          .from('messages')
+          .select('phone, body, dir, at')
+          .in('phone', toPostgrestInList(allPhones))
+          .order('at', { ascending: false })
+          .limit(Math.min(allPhones.length * 3, 200));
 
-      if (!msgErr && Array.isArray(recentMsgs)) {
-        for (const m of recentMsgs) {
-          const origPhone = phoneToOriginal.get(m.phone) || m.phone;
-          if (!previewMap.has(origPhone)) {
-            previewMap.set(origPhone, {
-              preview: m.dir === 'outbound' ? `You: ${m.body}` : m.body,
-              lastDir: m.dir || null
-            });
+        if (!msgErr && Array.isArray(recentMsgs)) {
+          for (const m of recentMsgs) {
+            const origPhone = phoneToOriginal.get(m.phone) || m.phone;
+            if (!previewMap.has(origPhone)) {
+              previewMap.set(origPhone, {
+                preview: m.dir === 'outbound' ? `You: ${m.body}` : m.body,
+                lastDir: m.dir || null
+              });
+            }
           }
         }
+      } catch (batchErr) {
+        console.warn('listConversations batch messages fetch failed, continuing without previews:', batchErr.message);
       }
-    } catch (batchErr) {
-      console.warn('listConversations batch messages fetch failed, continuing without previews:', batchErr.message);
     }
 
     return convos.map((c) => {
@@ -184,10 +188,11 @@ async function listConversations() {
 
 async function getMessages(phone) {
   const phones = getPhoneVariants(phone);
+  if (!phones || phones.length === 0) return [];
 
   if (!supabase) {
-    return fallback.messages.filter(m => phones.includes(m.phone)).map(m => {
-      const mediaList = fallback.media.filter(med => phones.includes(med.phone) && med.messageId && med.messageId === m.message_id);
+    return fallback.messages.filter(m => phones.includes(m.phone) || (m.phone && phones.includes(m.phone.replace(/[^0-9]/g, '')))).map(m => {
+      const mediaList = fallback.media.filter(med => (phones.includes(med.phone) || (med.phone && phones.includes(med.phone.replace(/[^0-9]/g, '')))) && med.messageId && med.messageId === m.message_id);
       return { dir: m.dir, body: m.body, at: m.at, media: mediaList.map(med => ({ id: med.id, type: med.type, mime: med.mime, size: med.size, filename: med.filename })) };
     });
   }
@@ -258,6 +263,7 @@ async function setBusinessNumber(phone, businessNumberId) {
 
 async function getBusinessNumber(phone) {
   const phones = getPhoneVariants(phone);
+  if (!phones || phones.length === 0) return null;
   if (!supabase) {
     for (const p of phones) {
       const c = fallback.conversations.get(p);
@@ -384,12 +390,14 @@ async function saveHandoff(phone, reason) {
 }
 
 async function removeHandoff(phone) {
+  const phones = getPhoneVariants(phone);
+  if (!phones || phones.length === 0) return;
   if (!supabase) {
-    fallback.handoffs.delete(phone);
+    for (const p of phones) fallback.handoffs.delete(p);
     return;
   }
   try {
-    await supabase.from('handoffs').delete().eq('phone', phone);
+    await supabase.from('handoffs').delete().in('phone', toPostgrestInList(phones));
   } catch (err) {
     console.warn('removeHandoff failed:', err.message);
   }
