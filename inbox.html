@@ -330,6 +330,20 @@ input, select, textarea { font-family: inherit; color: inherit; }
   border-style: solid; border-width: 0 0 10px 8px; border-color: transparent transparent transparent var(--bubble-out);
 }
 
+.sender-tag {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 3px;
+  opacity: 0.85;
+}
+.in .sender-tag { color: var(--brand-dark); }
+.out .sender-tag { color: #075E54; text-align: right; }
+@media (prefers-color-scheme: dark) {
+  .in .sender-tag { color: var(--accent); }
+  .out .sender-tag { color: #53bdeb; }
+}
+
 .msg-content { display: inline-block; min-width: 40px; margin-right: 48px; }
 .meta {
   float: right; font-size: 11px; color: var(--muted); margin-top: 8px; margin-left: -40px;
@@ -657,8 +671,9 @@ const phoneDigits=p=>{
   return str.replace(/[^0-9]/g,'');
 };
 const formatE164=p=>{
-  const d=phoneDigits(p);
+  let d=phoneDigits(p);
   if(!d) return '';
+  if(d.startsWith('00') && d.length > 4) d = d.slice(2);
   if(d.startsWith('0') && d.length===10) return '+61' + d.slice(1);
   return '+' + d;
 };
@@ -933,9 +948,16 @@ async function openChat(phone,name){
     }
   };
   const chCall = document.getElementById('chCallBtn');
-  if(chCall) chCall.onclick = callHandler;
+  if(chCall) {
+    chCall.onclick = callHandler;
+    chCall.title = 'Call ' + displayPhone;
+    chCall.setAttribute('aria-label', 'Call ' + displayPhone);
+  }
   const ciCall = document.getElementById('ciCallBtn');
-  if(ciCall) ciCall.onclick = callHandler;
+  if(ciCall) {
+    ciCall.onclick = callHandler;
+    ciCall.setAttribute('aria-label', 'Call ' + displayPhone);
+  }
 
   const mailBtn = document.getElementById('ciMailBtn');
   if(mailBtn) mailBtn.onclick = () => {
@@ -949,11 +971,11 @@ async function openChat(phone,name){
   document.getElementById('ciTags').innerHTML = ciTags || '<span class="ci-label">No tags</span>';
   
   render();
-  await Promise.all([loadBokunCard(reqId), loadMsgs(reqId)]);
+  await Promise.all([loadBokunCard(reqId), loadMsgs(reqId, true)]);
   setTimeout(()=>document.getElementById('input').focus(), 100);
 }
 
-async function loadBokunCard(reqId){
+async function loadBokunCard(reqId = currentChatRequestId){
   if(!cur) return;
   const chatPhone = cur;
   const holder=document.getElementById('bokunCard');holder.innerHTML='';
@@ -993,10 +1015,12 @@ async function loadBokunCard(reqId){
   }catch(e){/* ignore */}
 }
 
-async function loadMsgs(reqId){
+async function loadMsgs(reqId = currentChatRequestId, forceScrollBottom = false){
   if(!cur)return;
   const chatPhone = cur;
   const box=document.getElementById('msgs');
+  const wasNearBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 80;
+  const prevScrollTop = box.scrollTop;
   
   let ms = [];
   let wr = { open: true };
@@ -1023,6 +1047,9 @@ async function loadMsgs(reqId){
   box.innerHTML='';
   let lastDay='';
   
+  const convo=allConvos.find(c=>matchPhone(c.phone, chatPhone));
+  const activeName = (convo && convo.name) || chatPhone;
+
   if(!Array.isArray(ms) || ms.length===0){
     box.innerHTML=`<div class="empty"><div class="big">👋</div><div>Say hi to start the conversation!</div></div>`;
   } else {
@@ -1032,10 +1059,13 @@ async function loadMsgs(reqId){
         const s=document.createElement('div');s.className='daysep';s.innerText=day;box.appendChild(s);lastDay=day;
       }
       const isOut = m.dir==='outbound';
+      const senderLabel = isOut ? 'You' : activeName;
       
       if(m.media && Array.isArray(m.media) && m.media.length>0){
         m.media.forEach(med=>{
           const mb=document.createElement('div');mb.className='bubble media-bubble '+(isOut?'out':'in');
+          mb.setAttribute('data-sender', isOut ? 'outbound' : 'inbound');
+          const st=document.createElement('span');st.className='sender-tag';st.innerText=senderLabel;mb.appendChild(st);
           const mime = String(med.mime || '').toLowerCase();
           const isImg = ['image','jpeg','jpg','png','webp','gif'].some(t=>mime.includes(t)) || med.type==='image';
           if(isImg){
@@ -1061,13 +1091,13 @@ async function loadMsgs(reqId){
       }else{
         const b=document.createElement('div');
         b.className='bubble '+(isOut?'out':'in');
-        b.innerHTML=`<span class="msg-content">${esc(m.body||'')}</span><span class="meta">${fmtTime(m.at)}${isOut?'<span class="ticks">✓✓</span>':''}</span>`;
+        b.setAttribute('data-sender', isOut ? 'outbound' : 'inbound');
+        b.innerHTML=`<span class="sender-tag">${esc(senderLabel)}</span><span class="msg-content">${esc(m.body||'')}</span><span class="meta">${fmtTime(m.at)}${isOut?'<span class="ticks">✓✓</span>':''}</span>`;
         box.appendChild(b);
       }
     });
   }
   
-  const convo=allConvos.find(c=>matchPhone(c.phone, chatPhone));
   const pill=document.getElementById('chStatus');
   const humanTag=document.getElementById('chHumanTag');
   const handledBtn=document.getElementById('handledBtn');
@@ -1120,7 +1150,11 @@ async function loadMsgs(reqId){
     inp.placeholder='Type a message';
   }
   
-  box.scrollTop=box.scrollHeight;
+  if(forceScrollBottom || wasNearBottom){
+    box.scrollTop=box.scrollHeight;
+  }else{
+    box.scrollTop=prevScrollTop;
+  }
 }
 
 document.getElementById('handledBtn').onclick=async()=>{
@@ -1129,7 +1163,7 @@ document.getElementById('handledBtn').onclick=async()=>{
   try{
     await fetch('/inbox/api/conversations/'+encodeURIComponent(cur)+'/mark-handled',{method:'POST'});
     toast('Marked as handled ✓');
-    await loadConvos();await loadMsgs();
+    await loadConvos(true);await loadMsgs();
   }catch(e){toast('Could not update — try again.');}
   finally{btn.disabled=false;}
 };
@@ -1145,19 +1179,35 @@ async function send(){
       document.getElementById('warn').innerText=d.message||'Could not send.';
     }else{
       i.value='';
-      await loadMsgs();await loadConvos();
+      await loadMsgs(currentChatRequestId, true);await loadConvos(true);
     }
   }catch(e){toast('Network error — message not sent.');}
   finally{btn.disabled=false;i.focus();}
 }
 
+function closeChat(){
+  document.getElementById('app').classList.remove('show-chat','show-info');
+  cur=null;
+  currentChatRequestId++;
+  document.getElementById('chatHead').style.display='none';
+  document.getElementById('composer').style.display='none';
+  document.getElementById('quick').style.display='none';
+  document.getElementById('bokunCard').innerHTML='';
+  document.getElementById('warn').style.display='none';
+  document.getElementById('msgs').innerHTML=`
+    <div class="empty">
+      <div class="big">💬</div>
+      <div><b style="font-size:20px;color:var(--ink)">WhatsApp Web</b></div>
+      <div class="empty-text">Send and receive messages without keeping your phone online. Use WhatsApp on up to 4 linked devices and 1 phone at the same time.</div>
+    </div>
+  `;
+  render();
+}
+
 document.getElementById('send').onclick=send;
 document.getElementById('input').addEventListener('keydown',e=>{if(e.key==='Enter')send();});
 document.getElementById('search').addEventListener('input',render);
-document.getElementById('backBtn').addEventListener('click',()=>{
-  document.getElementById('app').classList.remove('show-chat','show-info');
-  cur=null;render();
-});
+document.getElementById('backBtn').addEventListener('click', closeChat);
 const closeBtn = document.getElementById('ciClose');
 if(closeBtn) closeBtn.addEventListener('click',()=>{
   document.getElementById('app').classList.remove('show-info');
@@ -1167,10 +1217,60 @@ document.querySelector('.chat-head .info').addEventListener('click', toggleInfo)
 document.querySelectorAll('.quick button').forEach(b=>b.onclick=()=>{
   const i = document.getElementById('input');
   if(!i.disabled) { i.value=b.dataset.q; i.focus(); }
+  else { toast('24h window is closed. Send a template message instead.'); }
+});
+
+// Tab visibility & idle-aware polling to eliminate continuous overnight churn
+let pollInterval = null;
+let lastInteractionTime = Date.now();
+let lastPollTime = Date.now();
+
+function getPollIntervalMs() {
+  const idleMs = Date.now() - lastInteractionTime;
+  if (idleMs > 15 * 60 * 1000) return 60000; // Idle > 15m: poll once a minute
+  if (idleMs > 5 * 60 * 1000) return 20000;  // Idle > 5m: poll every 20s
+  return 8000;                               // Active: poll every 8s
+}
+
+async function doPoll() {
+  if (document.hidden) return;
+  lastPollTime = Date.now();
+  await loadConvos(true);
+  if (cur) await loadMsgs();
+}
+
+function resetPollTimer() {
+  if (pollInterval) clearInterval(pollInterval);
+  pollInterval = setInterval(async () => {
+    await doPoll();
+  }, getPollIntervalMs());
+}
+
+function markActivity() {
+  const wasIdle = (Date.now() - lastInteractionTime) > 5 * 60 * 1000;
+  lastInteractionTime = Date.now();
+  if (wasIdle) {
+    doPoll();
+    resetPollTimer();
+  }
+}
+
+['mousemove', 'keydown', 'touchstart', 'scroll', 'click'].forEach(evt => {
+  window.addEventListener(evt, markActivity, { passive: true });
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    markActivity();
+    if (Date.now() - lastPollTime > 5000) {
+      doPoll();
+    }
+    resetPollTimer();
+  }
 });
 
 loadConvos();
-setInterval(()=>{loadConvos(true);if(cur)loadMsgs();},8000);
+resetPollTimer();
 
 // Deep link
 const params=new URLSearchParams(location.search);

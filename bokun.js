@@ -7,7 +7,7 @@
 require('dotenv').config();
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
-const { toPostgrestInList } = require('./inbox');
+const { toPostgrestInList, getPhoneVariants } = require('./inbox');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY;
@@ -123,35 +123,10 @@ async function listBookings() {
 
 async function getBookingsForPhone(phone) {
   if (!phone) return [];
-  let raw = String(phone || '').trim();
-  for (let i = 0; i < 3 && raw.includes('%'); i++) {
-    try {
-      const d = decodeURIComponent(raw);
-      if (d === raw) break;
-      raw = d;
-    } catch (e) {
-      break;
-    }
-  }
-  const digits = raw.replace(/[^0-9]/g, '');
-  const phonesSet = new Set();
-  if (digits) {
-    phonesSet.add(digits);
-    if (!digits.startsWith('0')) {
-      phonesSet.add('+' + digits);
-    }
-    if (digits.startsWith('61') && digits.length === 11) {
-      phonesSet.add('0' + digits.slice(2));
-      phonesSet.add('+61' + digits.slice(2));
-    } else if (digits.startsWith('0') && digits.length === 10) {
-      phonesSet.add('61' + digits.slice(1));
-      phonesSet.add('+61' + digits.slice(1));
-    }
-  }
-  const phones = Array.from(phonesSet);
+  const phones = getPhoneVariants(phone);
   if (!phones.length) return [];
   if (!supabase) {
-    return (await listBookings()).filter(b => phones.includes(b.phone) || (digits && b.phone && b.phone.replace(/[^0-9]/g, '') === digits));
+    return (await listBookings()).filter(b => phones.includes(b.phone) || (b.phone && phones.includes(b.phone.replace(/[^0-9]/g, ''))));
   }
   try {
     const postgrestPhones = toPostgrestInList(phones);

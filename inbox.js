@@ -38,23 +38,31 @@ function getPhoneVariants(phone) {
     }
   }
   raw = raw.replace(/^[\s+]+/, '+');
-  const digits = raw.replace(/[^0-9]/g, '');
+  let digits = raw.replace(/[^0-9]/g, '');
+  if (!digits) return [];
   const set = new Set();
-  if (digits) {
-    set.add(digits);
-    if (!digits.startsWith('0')) {
-      set.add('+' + digits);
-    }
-    // Australian phone format handling: +614XXXXXXXX <-> 04XXXXXXXX
-    if (digits.startsWith('61') && digits.length === 11) {
-      set.add('0' + digits.slice(2));
-      set.add('+61' + digits.slice(2));
-    } else if (digits.startsWith('0') && digits.length === 10) {
-      set.add('61' + digits.slice(1));
-      set.add('+61' + digits.slice(1));
+  if (digits.startsWith('00') && digits.length > 4) {
+    const intl = digits.slice(2);
+    set.add(intl);
+    if (!intl.startsWith('0')) set.add('+' + intl);
+    if (intl.startsWith('61') && intl.length === 11) {
+      set.add('0' + intl.slice(2));
+      set.add('+61' + intl.slice(2));
     }
   }
-  if (raw && !set.has(raw) && /[0-9a-zA-Z]/.test(raw)) set.add(raw);
+  set.add(digits);
+  if (!digits.startsWith('0')) {
+    set.add('+' + digits);
+  }
+  // Australian phone format handling: +614XXXXXXXX <-> 04XXXXXXXX
+  if (digits.startsWith('61') && digits.length === 11) {
+    set.add('0' + digits.slice(2));
+    set.add('+61' + digits.slice(2));
+  } else if (digits.startsWith('0') && digits.length === 10) {
+    set.add('61' + digits.slice(1));
+    set.add('+61' + digits.slice(1));
+  }
+  if (raw && !set.has(raw) && /[0-9]/.test(raw)) set.add(raw);
   return Array.from(set).filter(Boolean);
 }
 
@@ -63,12 +71,15 @@ function getPhoneVariants(phone) {
 // PGRST100 syntax errors in query strings.
 function toPostgrestInList(variants) {
   if (!variants || !Array.isArray(variants)) return [];
-  return Array.from(new Set(variants))
-    .filter(v => v !== null && v !== undefined && String(v).trim().length > 0)
-    .map(v => {
-      const s = String(v).replace(/"/g, '').trim();
-      return /[^0-9a-zA-Z_-]/.test(s) ? `"${s}"` : s;
-    });
+  const set = new Set();
+  for (const v of variants) {
+    if (v === null || v === undefined) continue;
+    const s = String(v).replace(/"/g, '').trim();
+    if (!s || s.length === 0) continue;
+    const formatted = /[^0-9a-zA-Z_-]/.test(s) ? `"${s}"` : s;
+    set.add(formatted);
+  }
+  return Array.from(set);
 }
 
 // In-memory fallback so the app doesn't crash if Supabase env vars are
@@ -151,27 +162,30 @@ async function listConversations() {
     // Attempt single batch query to get recent messages across these phones
     const previewMap = new Map();
     if (allPhones.length > 0) {
-      try {
-        const { data: recentMsgs, error: msgErr } = await supabase
-          .from('messages')
-          .select('phone, body, dir, at')
-          .in('phone', toPostgrestInList(allPhones))
-          .order('at', { ascending: false })
-          .limit(Math.min(allPhones.length * 3, 200));
+      const postgrestPhones = toPostgrestInList(allPhones);
+      if (postgrestPhones.length > 0) {
+        try {
+          const { data: recentMsgs, error: msgErr } = await supabase
+            .from('messages')
+            .select('phone, body, dir, at')
+            .in('phone', postgrestPhones)
+            .order('at', { ascending: false })
+            .limit(Math.min(allPhones.length * 3, 200));
 
-        if (!msgErr && Array.isArray(recentMsgs)) {
-          for (const m of recentMsgs) {
-            const origPhone = phoneToOriginal.get(m.phone) || m.phone;
-            if (!previewMap.has(origPhone)) {
-              previewMap.set(origPhone, {
-                preview: m.dir === 'outbound' ? `You: ${m.body}` : m.body,
-                lastDir: m.dir || null
-              });
+          if (!msgErr && Array.isArray(recentMsgs)) {
+            for (const m of recentMsgs) {
+              const origPhone = phoneToOriginal.get(m.phone) || m.phone;
+              if (!previewMap.has(origPhone)) {
+                previewMap.set(origPhone, {
+                  preview: m.dir === 'outbound' ? `You: ${m.body}` : m.body,
+                  lastDir: m.dir || null
+                });
+              }
             }
           }
+        } catch (batchErr) {
+          console.warn('listConversations batch messages fetch failed, continuing without previews:', batchErr.message);
         }
-      } catch (batchErr) {
-        console.warn('listConversations batch messages fetch failed, continuing without previews:', batchErr.message);
       }
     }
 
@@ -248,9 +262,11 @@ async function getMessages(phone) {
 async function isWindowOpen(phone) {
   const msgs = await getMessages(phone);
   for (let i = msgs.length - 1; i >= 0; i--) {
-    if (msgs[i].dir === 'inbound') {
-      const diffH = (Date.now() - new Date(msgs[i].at).getTime()) / 36e5;
-      return !isNaN(diffH) && diffH >= -1 && diffH <= 24;
+    if (msgs[i].dir === 'inbound' && msgs[i].at) {
+      const t = new Date(msgs[i].at).getTime();
+      if (isNaN(t)) continue;
+      const diffH = (Date.now() - t) / 36e5;
+      return diffH >= -1 && diffH <= 24;
     }
   }
   return false;
@@ -281,7 +297,9 @@ async function getBusinessNumber(phone) {
     }
     return null;
   }
-  const { data, error } = await supabase.from('conversations').select('business_number_id').in('phone', toPostgrestInList(phones)).limit(1);
+  const postgrestPhones = toPostgrestInList(phones);
+  if (!postgrestPhones.length) return null;
+  const { data, error } = await supabase.from('conversations').select('business_number_id').in('phone', postgrestPhones).limit(1);
   if (error || !data || !data.length) return null;
   return data[0].business_number_id || null;
 }
@@ -407,7 +425,9 @@ async function removeHandoff(phone) {
     return;
   }
   try {
-    await supabase.from('handoffs').delete().in('phone', toPostgrestInList(phones));
+    const postgrestPhones = toPostgrestInList(phones);
+    if (!postgrestPhones.length) return;
+    await supabase.from('handoffs').delete().in('phone', postgrestPhones);
   } catch (err) {
     console.warn('removeHandoff failed:', err.message);
   }
