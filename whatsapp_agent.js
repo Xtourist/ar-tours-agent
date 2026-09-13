@@ -306,8 +306,13 @@ app.get('/inbox/api/bokun-bookings', inboxAuth, async (req, res) => {
 res.json(await bokun.listBookings());
 });
 app.get('/inbox/api/conversations/:phone/bokun-bookings', inboxAuth, async (req, res) => {
-  const phone = String(req.params.phone || '').trim().replace(/^ /, '+');
-  res.json(await bokun.getBookingsForPhone(phone));
+  try {
+    const phone = String(req.params.phone || '').trim().replace(/^ /, '+');
+    res.json(await bokun.getBookingsForPhone(phone));
+  } catch (err) {
+    console.error('Error fetching bokun bookings:', err);
+    res.status(500).json({ error: 'Failed to load bookings', details: err.message });
+  }
 });
 
 async function handleMediaMessage(phoneNumber, userName, msgId, mediaType, mediaObj, businessNumberId) {
@@ -933,12 +938,22 @@ app.get('/inbox/api/handoff-status', inboxAuth, (req, res) => {
   res.json({ phones: list });
 });
 app.get('/inbox/api/conversations/:phone/messages', inboxAuth, async (req, res) => {
-  const phone = String(req.params.phone || '').trim().replace(/^ /, '+');
-  res.json(await inbox.getMessages(phone));
+  try {
+    const phone = String(req.params.phone || '').trim().replace(/^ /, '+');
+    res.json(await inbox.getMessages(phone));
+  } catch (err) {
+    console.error('Error fetching messages in /inbox/api/conversations/:phone/messages:', err);
+    res.status(500).json({ error: 'Failed to load messages', details: err.message });
+  }
 });
 app.get('/inbox/api/conversations/:phone/window', inboxAuth, async (req, res) => {
-  const phone = String(req.params.phone || '').trim().replace(/^ /, '+');
-  res.json({ open: await inbox.isWindowOpen(phone) });
+  try {
+    const phone = String(req.params.phone || '').trim().replace(/^ /, '+');
+    res.json({ open: await inbox.isWindowOpen(phone) });
+  } catch (err) {
+    console.error('Error checking window in /inbox/api/conversations/:phone/window:', err);
+    res.status(500).json({ error: 'Failed to check window', details: err.message });
+  }
 });
 app.post('/inbox/api/conversations/:phone/reply', inboxAuth, async (req, res) => {
   const phone = String(req.params.phone || '').trim().replace(/^ /, '+');

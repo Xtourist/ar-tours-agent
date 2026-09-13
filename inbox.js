@@ -400,6 +400,8 @@ module.exports = {
   listConversations,
   getMessages,
   isWindowOpen,
+  getPhoneVariants,
+  toPostgrestInList,
   setBusinessNumber,
   getBusinessNumber,
   savePushSubscription,

@@ -171,6 +171,11 @@ input, select, textarea { font-family: inherit; color: inherit; }
   transition: background 0.15s;
 }
 .icon-btn:hover { background: var(--panel-hover); }
+.btn-active-feedback {
+  transform: scale(0.92) !important;
+  opacity: 0.7 !important;
+  transition: transform 0.15s ease, opacity 0.15s ease !important;
+}
 
 .search { padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); flex-shrink: 0; }
 .search-box {
@@ -498,7 +503,8 @@ textarea.field { resize: vertical; min-height: 80px; }
           <div class="s" id="chPhone"></div>
         </div>
         <div class="header-actions">
-          <button class="icon-btn" id="chCallBtn" title="Call Contact">📞</button>
+          <button class="icon-btn" id="chCallBtn" title="Call Contact" aria-label="Call Contact">📞</button>
+          <span class="tag tag-human" id="chHumanTag" style="display:none">🙋 Needs you</span>
           <span class="status-pill" id="chStatus"></span>
           <button class="handled-btn" id="handledBtn" style="display:none">✓ Handled</button>
         </div>
@@ -536,7 +542,7 @@ textarea.field { resize: vertical; min-height: 80px; }
         <div class="ci-name" id="ciName"></div>
         <div class="ci-phone" id="ciPhone"></div>
         <div class="ci-actions">
-          <button class="ci-btn" id="ciCallBtn"><div class="ci-btn-icon">📞</div>Call</button>
+          <button class="ci-btn" id="ciCallBtn" aria-label="Call Contact"><div class="ci-btn-icon">📞</div>Call</button>
           <button class="ci-btn" id="ciMailBtn"><div class="ci-btn-icon">✉️</div>Email</button>
         </div>
       </div>
@@ -637,7 +643,24 @@ let seen={};
 try{seen=JSON.parse(localStorage.getItem('ar_inbox_seen')||'{}');}catch(e){seen={};}
 function saveSeen(){try{localStorage.setItem('ar_inbox_seen',JSON.stringify(seen));}catch(e){}}
 
-const phoneDigits=p=>String(p||'').replace(/[^0-9]/g,'');
+const phoneDigits=p=>{
+  if(!p) return '';
+  let str = String(p).trim();
+  for(let i=0; i<3 && str.includes('%'); i++){
+    try {
+      const d = decodeURIComponent(str);
+      if(d === str) break;
+      str = d;
+    } catch(e) { break; }
+  }
+  return str.replace(/[^0-9]/g,'');
+};
+const formatE164=p=>{
+  const d=phoneDigits(p);
+  if(!d) return '';
+  if(d.startsWith('0') && d.length===10) return '+61' + d.slice(1);
+  return '+' + d;
+};
 const matchPhone=(a,b)=>{
   if(!a || !b) return false;
   if(a === b) return true;
@@ -851,9 +874,10 @@ async function openChat(phone,name){
   document.getElementById('composer').style.display='flex';
   document.getElementById('quick').style.display='flex';
   
-  const displayName = name||phone;
+  const displayName = name||(c&&c.name)||phone;
   const cleanDigits = phoneDigits(phone);
-  const displayPhone = cleanDigits ? (cleanDigits.startsWith('+') ? cleanDigits : '+'+cleanDigits) : '';
+  const e164 = cleanDigits ? (cleanDigits.startsWith('0') && cleanDigits.length === 10 ? '+61' + cleanDigits.slice(1) : '+' + cleanDigits) : '';
+  const displayPhone = e164 || phone;
   document.getElementById('chAvatar').innerText=initials(displayName);
   document.getElementById('chName').innerText=displayName;
   document.getElementById('chPhone').innerText=displayPhone;
@@ -864,10 +888,16 @@ async function openChat(phone,name){
   document.getElementById('ciPhone').innerText=displayPhone;
   
   // Update action buttons (Call / Email)
-  const callHandler = () => {
-    if(cleanDigits) {
-      toast(`Initiating cellular call to +${cleanDigits}...`);
-      window.location.href = 'tel:+' + cleanDigits;
+  const callHandler = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if(e164) {
+      toast(`Calling ${e164}...`);
+      const btn = e && (e.currentTarget || e.target);
+      if (btn && btn.classList) {
+        btn.classList.add('btn-active-feedback');
+        setTimeout(() => btn.classList.remove('btn-active-feedback'), 500);
+      }
+      window.location.href = 'tel:' + e164;
     } else {
       toast('No valid phone number to call.');
     }
@@ -888,20 +918,20 @@ async function openChat(phone,name){
   if(c && c.tour && c.tour.tourName) ciTags+=`<span class="tag tag-tour">${esc(c.tour.tourName)}</span>`;
   document.getElementById('ciTags').innerHTML = ciTags || '<span class="ci-label">No tags</span>';
   
-  await loadBokunCard(cleanDigits || phone);
-  await loadMsgs();
   render();
+  await Promise.all([loadBokunCard(), loadMsgs()]);
   setTimeout(()=>document.getElementById('input').focus(), 100);
 }
 
-async function loadBokunCard(phone){
+async function loadBokunCard(){
+  if(!cur) return;
   const chatPhone = cur;
   const holder=document.getElementById('bokunCard');holder.innerHTML='';
   const ciBokun=document.getElementById('ciBokunData');ciBokun.innerHTML='';
   const ciTourSec=document.getElementById('ciTourSection');ciTourSec.style.display='none';
   
   try{
-    const r=await fetch('/inbox/api/conversations/'+encodeURIComponent(phone)+'/bokun-bookings');
+    const r=await fetch('/inbox/api/conversations/'+encodeURIComponent(cur)+'/bokun-bookings');
     if(cur !== chatPhone) return;
     if(!r.ok)return;
     const bookings=await r.json();
@@ -935,78 +965,90 @@ async function loadMsgs(){
   if(!cur)return;
   const chatPhone = cur;
   const box=document.getElementById('msgs');
-  try{
-    const r=await fetch('/inbox/api/conversations/'+encodeURIComponent(chatPhone)+'/messages');
+  
+  let ms = [];
+  let wr = { open: true };
+  try {
+    const [r, w] = await Promise.all([
+      fetch('/inbox/api/conversations/'+encodeURIComponent(cur)+'/messages'),
+      fetch('/inbox/api/conversations/'+encodeURIComponent(cur)+'/window').then(res=>res.json()).catch(()=>({open:true}))
+    ]);
     if(cur !== chatPhone) return;
     if(!r.ok) throw new Error('HTTP ' + r.status);
-    const ms=await r.json();
-    if(cur !== chatPhone) return;
-    box.innerHTML='';let lastDay='';
-    
-    if(!Array.isArray(ms) || ms.length===0){
-      box.innerHTML=`<div class="empty"><div class="big">👋</div><div>Say hi to start the conversation!</div></div>`;
-    }else{
-      ms.forEach(m=>{
-        const day=fmtDay(m.at);
-        if(day && day!==lastDay){
-          const s=document.createElement('div');s.className='daysep';s.innerText=day;box.appendChild(s);lastDay=day;
-        }
-        const isOut = m.dir==='outbound';
-        
-        if(m.media && Array.isArray(m.media) && m.media.length>0){
-          m.media.forEach(med=>{
-            const mb=document.createElement('div');mb.className='bubble media-bubble '+(isOut?'out':'in');
-            const mime = String(med.mime || '').toLowerCase();
-            const isImg = ['image','jpeg','jpg','png','webp','gif'].some(t=>mime.includes(t)) || med.type==='image';
-            if(isImg){
-              const img=document.createElement('img');img.className='media-img';img.src='/inbox/api/media/'+med.id;img.alt='Image';mb.appendChild(img);
-            }else{
-              const icon={'document':'📄','audio':'🔊','video':'🎥','file':'📎'}[med.type]||'📎';
-              const mf=document.createElement('div');mf.className='media-file';
-              mf.innerHTML=`<div class="media-icon">${icon}</div>
-              <div class="media-info"><div class="media-name"><a class="media-link" href="/inbox/api/media/${med.id}" download="${esc(med.filename||'attachment')}">${esc(med.filename||'Attachment')}</a></div>
-              <div class="media-size">${fmtSize(med.size)}</div></div>`;
-              mb.appendChild(mf);
-            }
-            if(m.body && m.body.trim()){
-              const cap=document.createElement('div');cap.className='media-caption';
-              cap.innerText=m.body;
-              mb.appendChild(cap);
-            }
-            const ts=document.createElement('span');ts.className='meta';
-            ts.innerHTML=`${fmtTime(m.at)}${isOut?'<span class="ticks">✓✓</span>':''}`;
-            mb.appendChild(ts);
-            box.appendChild(mb);
-          });
-        }else{
-          const b=document.createElement('div');
-          b.className='bubble '+(isOut?'out':'in');
-          b.innerHTML=`<span class="msg-content">${esc(m.body||'')}</span><span class="meta">${fmtTime(m.at)}${isOut?'<span class="ticks">✓✓</span>':''}</span>`;
-          box.appendChild(b);
-        }
-      });
-    }
-  }catch(err){
+    ms = await r.json();
+    wr = w || { open: true };
+  } catch(err) {
     if(cur !== chatPhone) return;
     console.error('loadMsgs error:', err);
     box.innerHTML=`<div class="empty" style="color:var(--muted)"><div>Could not load messages. Retrying...</div></div>`;
+    return;
   }
   
-  const wr=await fetch('/inbox/api/conversations/'+encodeURIComponent(chatPhone)+'/window').then(r=>r.json()).catch(()=>({open:true}));
   if(cur !== chatPhone) return;
+  box.innerHTML='';
+  let lastDay='';
+  
+  if(!Array.isArray(ms) || ms.length===0){
+    box.innerHTML=`<div class="empty"><div class="big">👋</div><div>Say hi to start the conversation!</div></div>`;
+  } else {
+    ms.forEach(m=>{
+      const day=fmtDay(m.at);
+      if(day && day!==lastDay){
+        const s=document.createElement('div');s.className='daysep';s.innerText=day;box.appendChild(s);lastDay=day;
+      }
+      const isOut = m.dir==='outbound';
+      
+      if(m.media && Array.isArray(m.media) && m.media.length>0){
+        m.media.forEach(med=>{
+          const mb=document.createElement('div');mb.className='bubble media-bubble '+(isOut?'out':'in');
+          const mime = String(med.mime || '').toLowerCase();
+          const isImg = ['image','jpeg','jpg','png','webp','gif'].some(t=>mime.includes(t)) || med.type==='image';
+          if(isImg){
+            const img=document.createElement('img');img.className='media-img';img.src='/inbox/api/media/'+med.id;img.alt='Image';mb.appendChild(img);
+          }else{
+            const icon={'document':'📄','audio':'🔊','video':'🎥','file':'📎'}[med.type]||'📎';
+            const mf=document.createElement('div');mf.className='media-file';
+            mf.innerHTML=`<div class="media-icon">${icon}</div>
+            <div class="media-info"><div class="media-name"><a class="media-link" href="/inbox/api/media/${med.id}" download="${esc(med.filename||'attachment')}">${esc(med.filename||'Attachment')}</a></div>
+            <div class="media-size">${fmtSize(med.size)}</div></div>`;
+            mb.appendChild(mf);
+          }
+          if(m.body && m.body.trim()){
+            const cap=document.createElement('div');cap.className='media-caption';
+            cap.innerText=m.body;
+            mb.appendChild(cap);
+          }
+          const ts=document.createElement('span');ts.className='meta';
+          ts.innerHTML=`${fmtTime(m.at)}${isOut?'<span class="ticks">✓✓</span>':''}`;
+          mb.appendChild(ts);
+          box.appendChild(mb);
+        });
+      }else{
+        const b=document.createElement('div');
+        b.className='bubble '+(isOut?'out':'in');
+        b.innerHTML=`<span class="msg-content">${esc(m.body||'')}</span><span class="meta">${fmtTime(m.at)}${isOut?'<span class="ticks">✓✓</span>':''}</span>`;
+        box.appendChild(b);
+      }
+    });
+  }
+  
   const convo=allConvos.find(c=>matchPhone(c.phone, chatPhone));
   const pill=document.getElementById('chStatus');
+  const humanTag=document.getElementById('chHumanTag');
   const handledBtn=document.getElementById('handledBtn');
   
   if(convo && convo.needsHuman){
-    pill.className='status-pill pill-human';pill.innerText='🙋 Needs you';
+    if(humanTag) humanTag.style.display='inline-block';
     handledBtn.style.display='inline-block';
-  }else if(wr.open){
-    pill.className='status-pill pill-open';pill.innerText='● Open (24h)';
+  }else{
+    if(humanTag) humanTag.style.display='none';
     handledBtn.style.display='none';
+  }
+
+  if(wr.open){
+    pill.className='status-pill pill-open';pill.innerText='● Open (24h)';
   }else{
     pill.className='status-pill pill-closed';pill.innerText='● Closed';
-    handledBtn.style.display='none';
   }
   
   const warn = document.getElementById('warn');

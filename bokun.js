@@ -121,26 +121,40 @@ async function listBookings() {
 }
 
 async function getBookingsForPhone(phone) {
-  const raw = String(phone || '').trim();
+  if (!phone) return [];
+  let raw = String(phone || '').trim();
+  for (let i = 0; i < 3 && raw.includes('%'); i++) {
+    try {
+      const d = decodeURIComponent(raw);
+      if (d === raw) break;
+      raw = d;
+    } catch (e) {
+      break;
+    }
+  }
   const digits = raw.replace(/[^0-9]/g, '');
   const phonesSet = new Set();
   if (digits) {
     phonesSet.add(digits);
+    phonesSet.add('+' + digits);
     if (digits.startsWith('61') && digits.length === 11) {
       phonesSet.add('0' + digits.slice(2));
+      phonesSet.add('+61' + digits.slice(2));
     } else if (digits.startsWith('0') && digits.length === 10) {
       phonesSet.add('61' + digits.slice(1));
+      phonesSet.add('+61' + digits.slice(1));
     }
   }
   const phones = Array.from(phonesSet);
   if (!supabase) {
-    return (await listBookings()).filter(b => phones.includes(b.phone));
+    return (await listBookings()).filter(b => phones.includes(b.phone) || (digits && b.phone && b.phone.replace(/[^0-9]/g, '') === digits));
   }
   try {
+    const postgrestPhones = phones.map(p => (/[^0-9a-zA-Z_-]/.test(p) ? `"${p.replace(/"/g, '')}"` : p));
     const { data, error } = await supabase
       .from('bokun_bookings')
       .select('*')
-      .in('phone', phones)
+      .in('phone', postgrestPhones)
       .order('created_at', { ascending: false });
     if (error || !data) return [];
     return data.map(row => ({
