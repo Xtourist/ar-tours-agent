@@ -5,7 +5,8 @@
   "main": "whatsapp_agent.js",
   "scripts": {
     "start": "node whatsapp_agent.js",
-    "dev": "nodemon whatsapp_agent.js"
+    "dev": "nodemon whatsapp_agent.js",
+    "test": "node test_inbox_resolution.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
