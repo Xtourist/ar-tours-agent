@@ -353,7 +353,6 @@ console.error('Error handling media:', error.message);
 
 async function handleCustomerMessage(phoneNumber, userName, messageText, businessNumberId) {
 try {
-const normPhone = String(phoneNumber || '').replace(/[^0-9]/g, '');
 // Safety net: if this message contains what looks like a real card number,
 // redact it before it ever touches history, the inbox log, or a handoff
 // email — never let a card number sit anywhere in plain text. This runs
@@ -362,10 +361,10 @@ const normPhone = String(phoneNumber || '').replace(/[^0-9]/g, '');
 const hasCard = containsCardNumber(messageText);
 const safeText = hasCard ? redactCardNumbers(messageText) : messageText;
 
-const history = await getConversationHistory(normPhone);
+const history = await getConversationHistory(phoneNumber);
 history.push({ role: 'user', content: safeText });
-conversationHistory.set(normPhone, history);
-await inbox.saveAIHistory(normPhone, history);
+conversationHistory.set(phoneNumber, history);
+await inbox.saveAIHistory(phoneNumber, history);
 await inbox.record(phoneNumber, userName, 'inbound', safeText);
 notifyPush(userName || phoneNumber, safeText.slice(0, 120), phoneNumber).catch(() => {});
 
@@ -374,8 +373,8 @@ console.warn(`Card number detected and redacted from message by ${phoneNumber} �
 startHandoff(phoneNumber, 'customer sent payment/card details (redacted)', { name: userName, lastMessage: safeText }).catch(() => {});
 const cardMsg = "For your security, we never take card or payment details over WhatsApp — I haven't stored what you sent. 🙏 Our team will send you a secure payment link directly once your booking is confirmed. I've flagged this chat for a team member to follow up shortly.";
 history.push({ role: 'assistant', content: cardMsg });
-conversationHistory.set(normPhone, history);
-await inbox.saveAIHistory(normPhone, history);
+conversationHistory.set(phoneNumber, history);
+await inbox.saveAIHistory(phoneNumber, history);
 await sendWhatsAppMessage(phoneNumber, cardMsg, businessNumberId);
 return;
 }
@@ -392,8 +391,8 @@ if (isHandoffTriggered(messageText)) {
 startHandoff(phoneNumber, 'customer requested human', { name: userName, lastMessage: messageText }).catch(() => {});
 const handoffMsg = "No problem! I've passed this on to one of our AR Tours travel specialists, who will follow up with you here shortly. 🙏\n\nIf it's urgent, you can also reach us directly:\n📧 human@theartours.com\n📞 +61 400 044 004";
 history.push({ role: 'assistant', content: handoffMsg });
-conversationHistory.set(normPhone, history);
-await inbox.saveAIHistory(normPhone, history);
+conversationHistory.set(phoneNumber, history);
+await inbox.saveAIHistory(phoneNumber, history);
 await sendWhatsAppMessage(phoneNumber, handoffMsg, businessNumberId);
 return;
 }
@@ -401,8 +400,8 @@ return;
 const response = await generateAIResponse(history, userName);
 
 history.push({ role: 'assistant', content: response });
-conversationHistory.set(normPhone, history);
-await inbox.saveAIHistory(normPhone, history);
+conversationHistory.set(phoneNumber, history);
+await inbox.saveAIHistory(phoneNumber, history);
 
 await sendWhatsAppMessage(phoneNumber, response, businessNumberId);
 
@@ -420,17 +419,7 @@ await sendWhatsAppMessage(phoneNumber, 'Sorry, I had trouble processing that. Pl
 async function generateAIResponse(history, userName) {
   const systemPrompt = buildSystemPrompt(userName);
 
-  // 1. Try OpenRouter (GPT-4o or configured model) — user specified
-  if (process.env.OPENROUTER_API_KEY) {
-    try {
-      console.log('🤖 Attempting OpenRouter API...');
-      return await callOpenRouterAPI(history, systemPrompt);
-    } catch (error) {
-      console.warn('OpenRouter failed:', error.response ? JSON.stringify(error.response.data) : error.message);
-    }
-  }
-
-  // 2. Try Claude (Anthropic) — best quality
+  // 1. Try Claude (Anthropic) — best quality
   if (process.env.CLAUDE_API_KEY && process.env.CLAUDE_API_KEY !== 'your_claude_api_key_here') {
     try {
       console.log('🤖 Attempting Claude API...');
@@ -440,7 +429,7 @@ async function generateAIResponse(history, userName) {
     }
   }
 
-  // 3. Try Gemini (Google) — strong fallback
+  // 2. Try Gemini (Google) — strong fallback
   const geminiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
   if (geminiKey && geminiKey !== 'your_google_api_key_here') {
     try {
@@ -451,7 +440,7 @@ async function generateAIResponse(history, userName) {
     }
   }
 
-  // 4. Try Groq — reliable always-on fallback
+  // 3. Try Groq — reliable always-on fallback
   if (process.env.GROQ_API_KEY) {
     try {
       console.log('🤖 Attempting Groq API...');
@@ -463,35 +452,6 @@ async function generateAIResponse(history, userName) {
 
   console.error('❌ All AI providers failed or unconfigured.');
   return "Thanks for reaching out to AR Tours! We're experiencing high demand right now. Please try again in a moment, or contact us at human@theartours.com or +61 400 044 004.";
-}
-
-async function callOpenRouterAPI(history, systemPrompt) {
-  const model = process.env.OPENROUTER_MODEL || 'openai/gpt-4o';
-  const response = await axios.post(
-    'https://openrouter.ai/api/v1/chat/completions',
-    {
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...history.map(m => ({
-          role: m.role === 'assistant' ? 'assistant' : 'user',
-          content: m.content
-        }))
-      ],
-      max_tokens: 500,
-      temperature: 0.7
-    },
-    {
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'HTTP-Referer': process.env.SITE_URL || 'https://theartours.com',
-        'X-Title': process.env.SITE_NAME || 'AR Tours WhatsApp Agent',
-        'Content-Type': 'application/json'
-      },
-      timeout: 15000
-    }
-  );
-  return response.data.choices[0].message.content;
 }
 
 async function callClaudeAPI(history, systemPrompt) {
@@ -693,17 +653,16 @@ Customer name: ${userName}`;
 }
 
 async function getConversationHistory(phoneNumber) {
-  const normPhone = String(phoneNumber || '').replace(/[^0-9]/g, '');
-  if (!conversationHistory.has(normPhone)) {
-    const loaded = await inbox.loadAIHistory(normPhone);
-    conversationHistory.set(normPhone, loaded || []);
-  }
-  let history = conversationHistory.get(normPhone);
-  if (history.length > MAX_HISTORY) {
-    history = history.slice(-MAX_HISTORY);
-    conversationHistory.set(normPhone, history);
-  }
-  return history;
+if (!conversationHistory.has(phoneNumber)) {
+const loaded = await inbox.loadAIHistory(phoneNumber);
+conversationHistory.set(phoneNumber, loaded || []);
+}
+let history = conversationHistory.get(phoneNumber);
+if (history.length > MAX_HISTORY) {
+history = history.slice(-MAX_HISTORY);
+conversationHistory.set(phoneNumber, history);
+}
+return history;
 }
 
 const GRAPH_API_VERSION = process.env.WHATSAPP_GRAPH_VERSION || 'v21.0';
@@ -746,7 +705,7 @@ console.error('Error sending message:', error.response ? JSON.stringify(error.re
 //
 // bodyParams is an ordered array of strings filling the template's {{1}},
 // {{2}}, etc. placeholders, in order.
-async function sendWhatsAppTemplate(phoneNumber, templateName, languageCode, bodyParams = [], fromNumberId, contactName = null) {
+async function sendWhatsAppTemplate(phoneNumber, templateName, languageCode, bodyParams = [], fromNumberId) {
 const senderId = fromNumberId || process.env.PHONE_NUMBER_ID;
 const toDigits = String(phoneNumber || '').replace(/[^0-9]/g, '');
 const components = bodyParams.length
@@ -775,19 +734,7 @@ console.log(`Template "${templateName}" sent to ${phoneNumber} from ${senderId}`
 // Record a readable version in the inbox so it shows in the chat history
 // like any other outbound message.
 const readable = bodyParams.length ? `[Template: ${templateName}] ${bodyParams.join(' / ')}` : `[Template: ${templateName}]`;
-await inbox.record(phoneNumber, contactName, 'outbound', readable);
-
-// Also persist into AI conversation history so when the customer replies,
-// the AI knows what template message was sent to them and doesn't claim
-// "no chat history" or lack context.
-try {
-  const history = await getConversationHistory(toDigits);
-  history.push({ role: 'assistant', content: readable });
-  conversationHistory.set(toDigits, history);
-  await inbox.saveAIHistory(toDigits, history);
-} catch (histErr) {
-  console.warn('Failed to record template to AI conversation history:', histErr.message);
-}
+await inbox.record(phoneNumber, null, 'outbound', readable);
 }
 
 // Start a new conversation with a phone number that hasn't messaged us yet.
@@ -802,8 +749,9 @@ const fromNumberId = from === 'second' ? process.env.SECOND_PHONE_NUMBER_ID : pr
 if (from === 'second' && !fromNumberId) {
 return res.status(400).json({ error: 'not_configured', message: 'SECOND_PHONE_NUMBER_ID is not set on the server yet.' });
 }
-await sendWhatsAppTemplate(phone, template, language, Array.isArray(params) ? params : [], fromNumberId, name);
+await sendWhatsAppTemplate(phone, template, language, Array.isArray(params) ? params : [], fromNumberId);
 if (from === 'second') await inbox.setBusinessNumber(phone, fromNumberId);
+if (name) await inbox.record(phone, name, 'outbound', `[Template: ${template}]`);
 res.json({ ok: true });
 } catch (error) {
 const details = error.response ? error.response.data : { message: error.message };
