@@ -440,7 +440,7 @@ async function generateAIResponse(history, userName) {
     }
   }
 
-  // 3. Try Groq — reliable always-on fallback
+  // 3. Try Groq — fast primary engine
   if (process.env.GROQ_API_KEY) {
     try {
       console.log('🤖 Attempting Groq API...');
@@ -450,8 +450,47 @@ async function generateAIResponse(history, userName) {
     }
   }
 
+  // 4. Try OpenRouter (GPT-4o) — reliable fallback
+  if (process.env.OPENROUTER_API_KEY) {
+    try {
+      console.log('🤖 Attempting OpenRouter API...');
+      return await callOpenRouterAPI(history, systemPrompt);
+    } catch (error) {
+      console.warn('OpenRouter failed:', error.response ? JSON.stringify(error.response.data) : error.message);
+    }
+  }
+
   console.error('❌ All AI providers failed or unconfigured.');
   return "Thanks for reaching out to AR Tours! We're experiencing high demand right now. Please try again in a moment, or contact us at human@theartours.com or +61 400 044 004.";
+}
+
+async function callOpenRouterAPI(history, systemPrompt) {
+  const model = process.env.OPENROUTER_MODEL || 'openai/gpt-4o';
+  const response = await axios.post(
+    'https://openrouter.ai/api/v1/chat/completions',
+    {
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...history.map(m => ({
+          role: m.role === 'assistant' ? 'assistant' : 'user',
+          content: m.content
+        }))
+      ],
+      max_tokens: 500,
+      temperature: 0.7
+    },
+    {
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'HTTP-Referer': process.env.SITE_URL || 'https://theartours.com',
+        'X-Title': process.env.SITE_NAME || 'AR Tours WhatsApp Agent',
+        'Content-Type': 'application/json'
+      },
+      timeout: 15000
+    }
+  );
+  return response.data.choices[0].message.content;
 }
 
 async function callClaudeAPI(history, systemPrompt) {
