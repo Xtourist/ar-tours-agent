@@ -9,6 +9,7 @@ const { sendHandoffAlert } = require('./alert');
 const { sendLeadWebhook } = require('./leadWebhook');
 const { downloadMedia, streamMediaTo } = require('./media');
 const webpush = require('web-push');
+const { OpenRouter } = require('@openrouter/sdk');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -466,6 +467,32 @@ async function generateAIResponse(history, userName) {
 
 async function callOpenRouterAPI(history, systemPrompt) {
   const model = process.env.OPENROUTER_MODEL || 'openai/gpt-4o';
+  try {
+    const openrouter = new OpenRouter({
+      apiKey: process.env.OPENROUTER_API_KEY
+    });
+    const result = await openrouter.chat.send({
+      chatRequest: {
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...history.map(m => ({
+            role: m.role === 'assistant' ? 'assistant' : 'user',
+            content: m.content
+          }))
+        ],
+        maxTokens: 500,
+        temperature: 0.7
+      }
+    });
+    if (result && result.choices && result.choices[0] && result.choices[0].message) {
+      return result.choices[0].message.content;
+    }
+  } catch (sdkErr) {
+    console.warn('OpenRouter SDK call failed, attempting direct HTTP fallback:', sdkErr.message);
+  }
+
+  // Direct HTTP fallback
   const response = await axios.post(
     'https://openrouter.ai/api/v1/chat/completions',
     {
