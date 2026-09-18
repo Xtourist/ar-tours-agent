@@ -174,6 +174,20 @@ reason,
 lastMessage: context.lastMessage || '',
 transcript
 }).catch(err => console.error('sendLeadWebhook error:', err.message));
+
+    // Direct WhatsApp alert to human agent (+61477747774)
+    const humanAgentPhone = '61477747774';
+    const cleanCustomerDigits = String(phoneNumber || '').replace(/[^0-9]/g, '');
+    const agentAlertText = `🚨 *HUMAN HANDOFF ALERT*\n\n` +
+      `👤 *Customer:* ${context.name || 'Guest'}\n` +
+      `📞 *Phone:* +${cleanCustomerDigits}\n` +
+      `⚠️ *Reason:* ${reason}\n\n` +
+      `💬 *Last Message:*\n"${context.lastMessage || 'N/A'}"\n\n` +
+      `👉 *Reply to customer:* https://wa.me/${cleanCustomerDigits}`;
+    
+    sendWhatsAppMessage(humanAgentPhone, agentAlertText, process.env.PHONE_NUMBER_ID).catch(err => {
+      console.error('Failed to notify human agent via WhatsApp:', err.message);
+    });
 }
 }
 
@@ -1022,7 +1036,9 @@ app.get('/inbox/api/handoff-status', inboxAuth, (req, res) => {
 });
 app.get('/inbox/api/conversations/:phone/messages', inboxAuth, async (req, res) => {
   try {
-    const phone = String(req.params.phone || '').replace(/^ /, '+').trim();
+    let raw = String(req.params.phone || '').trim();
+    try { raw = decodeURIComponent(raw); } catch (e) {}
+    const phone = raw.replace(/^ /, '+').trim();
     res.json(await inbox.getMessages(phone));
   } catch (err) {
     console.error('Error fetching messages in /inbox/api/conversations/:phone/messages:', err);
