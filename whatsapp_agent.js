@@ -175,8 +175,8 @@ lastMessage: context.lastMessage || '',
 transcript
 }).catch(err => console.error('sendLeadWebhook error:', err.message));
 
-    // Direct WhatsApp alert to human agent (+61477747774)
-    const humanAgentPhone = '61477747774';
+    // Direct WhatsApp alert to human agent (+61472756097)
+    const humanAgentPhone = '61472756097';
     const cleanCustomerDigits = String(phoneNumber || '').replace(/[^0-9]/g, '');
     const agentAlertText = `🚨 *HUMAN HANDOFF ALERT*\n\n` +
       `👤 *Customer:* ${context.name || 'Guest'}\n` +
