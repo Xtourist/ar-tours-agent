@@ -218,7 +218,7 @@ async function getMessages(phone) {
       return { dir: m.dir, body: m.body, at: m.at, media: mediaList.map(med => ({ id: med.id, type: med.type, mime: med.mime, size: med.size, filename: med.filename })) };
     });
   }
-  const queryPhones = Array.from(new Set([...phones, ...toPostgrestInList(phones)]));
+  const queryPhones = Array.from(new Set(phones));
   if (!queryPhones.length) return [];
   const { data: msgs, error } = await supabase
     .from('messages')
@@ -232,7 +232,7 @@ async function getMessages(phone) {
   const { data: mediaItems } = await supabase
     .from('media')
     .select('message_id, media_id, type, mime, size, filename')
-    .in('phone', postgrestPhones);
+    .in('phone', queryPhones);
 
   const mediaMap = new Map();
   (mediaItems || []).forEach(item => {
