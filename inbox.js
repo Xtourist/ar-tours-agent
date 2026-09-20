@@ -121,7 +121,11 @@ async function record(phone, name, direction, body, messageId = null) {
 
   const msgPayload = { phone, dir: direction, body: body || '', at };
   if (messageId) msgPayload.message_id = messageId;
-  await supabase.from('messages').insert(msgPayload);
+  const { error: insErr } = await supabase.from('messages').insert(msgPayload);
+  if (insErr && insErr.message && insErr.message.includes('message_id')) {
+    delete msgPayload.message_id;
+    await supabase.from('messages').insert(msgPayload);
+  }
 }
 
 async function listConversations() {
@@ -220,19 +224,38 @@ async function getMessages(phone) {
   }
   const postgrestPhones = toPostgrestInList(phones);
   if (!postgrestPhones.length) return [];
-  const { data: msgs, error } = await supabase
+  let { data: msgs, error } = await supabase
     .from('messages')
     .select('dir, body, at, message_id')
     .in('phone', postgrestPhones)
     .order('at', { ascending: false })
     .limit(500);
+
+  // If message_id column does not exist in the database, query without it
+  if (error && error.message && error.message.includes('message_id')) {
+    const fallbackRes = await supabase
+      .from('messages')
+      .select('dir, body, at')
+      .in('phone', postgrestPhones)
+      .order('at', { ascending: false })
+      .limit(500);
+    msgs = fallbackRes.data;
+    error = fallbackRes.error;
+  }
+
   if (error) { console.warn('getMessages error:', error.message); return []; }
 
-  // Query media items associated with these phone variants
-  const { data: mediaItems } = await supabase
-    .from('media')
-    .select('message_id, media_id, type, mime, size, filename')
-    .in('phone', postgrestPhones);
+  // Query media items associated with these phone variants (safely ignoring if media table is not present)
+  let mediaItems = [];
+  try {
+    const { data: mData, error: mErr } = await supabase
+      .from('media')
+      .select('message_id, media_id, type, mime, size, filename')
+      .in('phone', postgrestPhones);
+    if (!mErr && Array.isArray(mData)) mediaItems = mData;
+  } catch (medEx) {
+    // safely ignore
+  }
 
   const mediaMap = new Map();
   (mediaItems || []).forEach(item => {
