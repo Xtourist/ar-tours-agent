@@ -218,12 +218,12 @@ async function getMessages(phone) {
       return { dir: m.dir, body: m.body, at: m.at, media: mediaList.map(med => ({ id: med.id, type: med.type, mime: med.mime, size: med.size, filename: med.filename })) };
     });
   }
-  const queryPhones = Array.from(new Set(phones));
-  if (!queryPhones.length) return [];
+  const postgrestPhones = toPostgrestInList(phones);
+  if (!postgrestPhones.length) return [];
   const { data: msgs, error } = await supabase
     .from('messages')
     .select('dir, body, at, message_id')
-    .in('phone', queryPhones)
+    .in('phone', postgrestPhones)
     .order('at', { ascending: false })
     .limit(500);
   if (error) { console.warn('getMessages error:', error.message); return []; }
@@ -232,7 +232,7 @@ async function getMessages(phone) {
   const { data: mediaItems } = await supabase
     .from('media')
     .select('message_id, media_id, type, mime, size, filename')
-    .in('phone', queryPhones);
+    .in('phone', postgrestPhones);
 
   const mediaMap = new Map();
   (mediaItems || []).forEach(item => {
