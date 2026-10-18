@@ -66,4 +66,29 @@ async function sendHandoffAlert({ phone, name, reason, lastMessage }) {
   }
 }
 
-module.exports = { sendHandoffAlert };
+async function sendNewMessageAlert({ phone, name, message }) {
+  const t = getTransporter();
+  if (!t) return;
+
+  const to = process.env.ALERT_EMAIL_TO || process.env.ALERT_EMAIL_USER;
+  const inboxUrl = process.env.INBOX_URL || 'https://ar-tours-agent.onrender.com/inbox';
+
+  try {
+    await t.sendMail({
+      from: `"AR Tours Bot" <${process.env.ALERT_EMAIL_USER}>`,
+      to,
+      subject: `💬 New WhatsApp message from ${escapeHtml(name || phone)}`,
+      text: `You have a new WhatsApp message.\n\nFrom: ${name || 'Unknown'}\nPhone: +${phone}\nMessage: "${message}"\n\nReply here: ${inboxUrl}`,
+      html: `<p><b>New WhatsApp message received.</b></p>
+             <p><b>From:</b> ${escapeHtml(name || 'Unknown')}<br>
+             <b>Phone:</b> +${escapeHtml(phone)}<br>
+             <b>Message:</b> "${escapeHtml(message)}"</p>
+             <p><a href="${escapeHtml(inboxUrl)}">Open inbox to reply →</a></p>`
+    });
+    console.log(`New message alert email sent for ${phone}`);
+  } catch (err) {
+    console.error('Failed to send new message alert email:', err.message);
+  }
+}
+
+module.exports = { sendHandoffAlert, sendNewMessageAlert };

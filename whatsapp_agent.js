@@ -5,7 +5,7 @@ require('dotenv').config();
 const path = require('path');
 const inbox = require('./inbox');
 const bokun = require('./bokun');
-const { sendHandoffAlert } = require('./alert');
+const { sendHandoffAlert, sendNewMessageAlert } = require('./alert');
 const { sendLeadWebhook } = require('./leadWebhook');
 const { downloadMedia, streamMediaTo } = require('./media');
 const webpush = require('web-push');
@@ -175,8 +175,8 @@ lastMessage: context.lastMessage || '',
 transcript
 }).catch(err => console.error('sendLeadWebhook error:', err.message));
 
-    // Direct WhatsApp alert to human agent (+61472756097)
-    const humanAgentPhone = '61472756097';
+    // Direct WhatsApp alert to human agent (+61400040243)
+    const humanAgentPhone = '61400040243';
     const cleanCustomerDigits = String(phoneNumber || '').replace(/[^0-9]/g, '');
     const agentAlertText = `🚨 *HUMAN HANDOFF ALERT*\n\n` +
       `👤 *Customer:* ${context.name || 'Guest'}\n` +
@@ -224,7 +224,7 @@ if (!value || !value.messages) continue;
 
 const contacts = value.contacts;
 // Multi-number support: this is the ID of the business number that
-// actually received the message (main +61400044004 or the new
+// actually received the message (main +61400040243 or the new
 // +61400040243). We route the reply back out through the same number
 // instead of always using a single hardcoded env var.
 const businessNumberId = value.metadata && value.metadata.phone_number_id
@@ -355,11 +355,13 @@ console.warn(`Could not download ${mediaType} for ${phoneNumber}:`, dlErr.messag
 
 // Acknowledge to customer (optional)
 if (mediaType === 'image') {
-await sendWhatsAppMessage(phoneNumber, '📸 Got your photo! Our team will review and get back to you shortly.', businessNumberId);
+await sendWhatsAppMessage(phoneNumber, "Hi there! 👋 Unfortunately, we're not able to receive or view images here on this number.\n\nIf you'd like to share something with us, please describe it in a text message and we'll do our best to help. 😊\n\nOr if you need to speak to someone directly:\n📞 +61 400 040 243\n📧 human@theartours.com", businessNumberId);
+} else if (mediaType === 'audio') {
+await sendWhatsAppMessage(phoneNumber, "Hi! 👋 We're sorry, but we're unable to receive voice messages or audio files on this number.\n\nPlease type out your question or request and we'll be happy to assist you! 😊\n\nPrefer to speak directly?\n📞 +61 400 040 243\n📧 human@theartours.com", businessNumberId);
 } else if (mediaType === 'document') {
-await sendWhatsAppMessage(phoneNumber, '📄 Received your document! We will review it and follow up soon.', businessNumberId);
+await sendWhatsAppMessage(phoneNumber, "Hi there! 👋 We're not able to receive documents or files on this number, sorry about that.\n\nCould you describe what you need in a text message instead? Our team is happy to help. 😊\n\nOr reach us directly:\n📞 +61 400 040 243\n📧 human@theartours.com", businessNumberId);
 } else {
-await sendWhatsAppMessage(phoneNumber, `✓ Received your ${mediaType}. Thanks for sharing!`, businessNumberId);
+await sendWhatsAppMessage(phoneNumber, `Hi! 👋 We're not set up to receive ${mediaType} files here, apologies for any inconvenience.\n\nPlease type your question or request and we'll get back to you right away. 😊\n\n📞 +61 400 040 243\n📧 human@theartours.com`, businessNumberId);
 }
 } catch (error) {
 console.error('Error handling media:', error.message);
@@ -382,6 +384,7 @@ conversationHistory.set(phoneNumber, history);
 await inbox.saveAIHistory(phoneNumber, history);
 await inbox.record(phoneNumber, userName, 'inbound', safeText);
 notifyPush(userName || phoneNumber, safeText.slice(0, 120), phoneNumber).catch(() => {});
+sendNewMessageAlert({ phone: phoneNumber, name: userName, message: safeText.slice(0, 300) }).catch(() => {});
 
 if (hasCard) {
 console.warn(`Card number detected and redacted from message by ${phoneNumber} — never storing or emailing it.`);
@@ -404,7 +407,7 @@ return;
 // If the customer explicitly asks for a human, hand off immediately.
 if (isHandoffTriggered(messageText)) {
 startHandoff(phoneNumber, 'customer requested human', { name: userName, lastMessage: messageText }).catch(() => {});
-const handoffMsg = "No problem! I've passed this on to one of our AR Tours travel specialists, who will follow up with you here shortly. 🙏\n\nIf it's urgent, you can also reach us directly:\n📧 human@theartours.com\n📞 +61 400 044 004";
+const handoffMsg = "No problem! I've passed this on to one of our AR Tours travel specialists, who will follow up with you here shortly. 🙏\n\nIf it's urgent, you can also reach us directly:\n📧 human@theartours.com\n📞 +61 400 040 243";
 history.push({ role: 'assistant', content: handoffMsg });
 conversationHistory.set(phoneNumber, history);
 await inbox.saveAIHistory(phoneNumber, history);
@@ -476,7 +479,7 @@ async function generateAIResponse(history, userName) {
   }
 
   console.error('❌ All AI providers failed or unconfigured.');
-  return "Thanks for reaching out to AR Tours! We're experiencing high demand right now. Please try again in a moment, or contact us at human@theartours.com or +61 400 044 004.";
+  return "Thanks for reaching out to AR Tours! We're experiencing high demand right now. Please try again in a moment, or contact us at human@theartours.com or +61 400 040 243.";
 }
 
 async function callOpenRouterAPI(history, systemPrompt) {
@@ -630,7 +633,7 @@ ABSOLUTE RULES — NEVER BREAK THESE
 
    Once you have enough of these details to be useful, tell the customer clearly: "Thanks [name]! I've passed all of this on to our AR Tours team. They'll check availability and send you a proper quote by email within 24 hours." Then actually collect and mention their email address if you don't have it yet, since the quote goes there.
 
-6. Always let the customer know, early and naturally (not as a wall of legal text), that they're chatting with an automated assistant, and that they can reach a real person any time: "By the way, I'm an automated assistant. If you'd like to speak to a real person directly, just type 'human' any time, or reach us at 📧 human@theartours.com / 📞 +61 400 044 004."
+6. Always let the customer know, early and naturally (not as a wall of legal text), that they're chatting with an automated assistant, and that they can reach a real person any time: "By the way, I'm an automated assistant. If you'd like to speak to a real person directly, just type 'human' any time, or reach us at 📧 human@theartours.com / 📞 +61 400 040 243."
 
 7. If a customer explicitly asks for a price, a card payment, or to "just book it now", and you've already explained you can't do that, do not repeat the same refusal robotically — acknowledge their urgency warmly, and reassure them the team responds fast (within 24 hours, often sooner) and can call them directly if it's time-sensitive.
 ═══════════════════════════════════════
@@ -638,7 +641,7 @@ ABSOLUTE RULES — NEVER BREAK THESE
 COMPANY INFORMATION
 Business Name: AR Tours (AR Travel Group Pty Ltd)
 Website: https://toursau.com
-Primary WhatsApp: +61 400 044 004
+Primary WhatsApp: +61 400 040 243
 Email: 888artours@gmail.com
 Instagram: @theartours
 Base: Melbourne, primarily serving Victoria, with custom tours available anywhere in Australia.
@@ -747,7 +750,7 @@ return history;
 
 const GRAPH_API_VERSION = process.env.WHATSAPP_GRAPH_VERSION || 'v21.0';
 
-// fromNumberId lets us send from whichever business number (+61400044004 or
+// fromNumberId lets us send from whichever business number (+61400040243 or
 // the new +61400040243) actually owns this conversation. Falls back to the
 // main number's env var if none is known yet (e.g. very first outbound send
 // before any inbound message has been recorded for this phone).
@@ -824,7 +827,7 @@ const { phone, name, template, language, params, from } = req.body;
 if (!phone || !template) return res.status(400).json({ error: 'phone and template are required' });
 try {
 // "from" lets the New Message modal choose which business number to send
-// from (main +61400044004 or +61400040243). Defaults to the main number.
+// from (main +61400040243 or +61400040243). Defaults to the main number.
 const fromNumberId = from === 'second' ? process.env.SECOND_PHONE_NUMBER_ID : process.env.PHONE_NUMBER_ID;
 if (from === 'second' && !fromNumberId) {
 return res.status(400).json({ error: 'not_configured', message: 'SECOND_PHONE_NUMBER_ID is not set on the server yet.' });
