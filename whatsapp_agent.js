@@ -224,7 +224,7 @@ if (!value || !value.messages) continue;
 
 const contacts = value.contacts;
 // Multi-number support: this is the ID of the business number that
-// actually received the message (main +61400040243 or the new
+// actually received the message (main +61400044004 or secondary
 // +61400040243). We route the reply back out through the same number
 // instead of always using a single hardcoded env var.
 const businessNumberId = value.metadata && value.metadata.phone_number_id
@@ -751,8 +751,8 @@ return history;
 
 const GRAPH_API_VERSION = process.env.WHATSAPP_GRAPH_VERSION || 'v21.0';
 
-// fromNumberId lets us send from whichever business number (+61400040243 or
-// the new +61400040243) actually owns this conversation. Falls back to the
+// fromNumberId lets us send from whichever business number (+61400044004 bot
+// or +61400040243 human) actually owns this conversation. Falls back to the
 // main number's env var if none is known yet (e.g. very first outbound send
 // before any inbound message has been recorded for this phone).
 async function sendWhatsAppMessage(phoneNumber, messageText, fromNumberId) {
@@ -828,7 +828,7 @@ const { phone, name, template, language, params, from } = req.body;
 if (!phone || !template) return res.status(400).json({ error: 'phone and template are required' });
 try {
 // "from" lets the New Message modal choose which business number to send
-// from (main +61400040243 or +61400040243). Defaults to the main number.
+// from (main bot +61400044004 or secondary +61400040243). Defaults to the main number.
 const fromNumberId = from === 'second' ? process.env.SECOND_PHONE_NUMBER_ID : process.env.PHONE_NUMBER_ID;
 if (from === 'second' && !fromNumberId) {
 return res.status(400).json({ error: 'not_configured', message: 'SECOND_PHONE_NUMBER_ID is not set on the server yet.' });
