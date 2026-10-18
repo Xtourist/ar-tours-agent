@@ -641,7 +641,8 @@ ABSOLUTE RULES — NEVER BREAK THESE
 COMPANY INFORMATION
 Business Name: AR Tours (AR Travel Group Pty Ltd)
 Website: https://toursau.com
-Primary WhatsApp: +61 400 040 243
+Primary WhatsApp (bot): +61 400 044 004
+Human / Urgent contact: +61 400 040 243
 Email: 888artours@gmail.com
 Instagram: @theartours
 Base: Melbourne, primarily serving Victoria, with custom tours available anywhere in Australia.
