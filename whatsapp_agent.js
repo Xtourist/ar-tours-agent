@@ -176,6 +176,13 @@ transcript
 }).catch(err => console.error('sendLeadWebhook error:', err.message));
 
     // Direct WhatsApp alert to human agent (+61400040243)
+    // We try two delivery methods in sequence:
+    // 1. Free-text sendWhatsAppMessage — works only if +61400040243 messaged the
+    //    bot within the last 24 h (the WhatsApp "customer service window").
+    // 2. Template fallback — uses the approved 'hello_world' template (available
+    //    on every WABA by default) so the alert arrives even when the window is
+    //    closed. To get richer alerts, create a custom template called
+    //    'handoff_alert' in WhatsApp Manager and set HANDOFF_TEMPLATE_NAME env var.
     const humanAgentPhone = '61400040243';
     const cleanCustomerDigits = String(phoneNumber || '').replace(/[^0-9]/g, '');
     const agentAlertText = `🚨 *HUMAN HANDOFF ALERT*\n\n` +
@@ -184,9 +191,24 @@ transcript
       `⚠️ *Reason:* ${reason}\n\n` +
       `💬 *Last Message:*\n"${context.lastMessage || 'N/A'}"\n\n` +
       `👉 *Reply to customer:* https://wa.me/${cleanCustomerDigits}`;
-    
-    sendWhatsAppMessage(humanAgentPhone, agentAlertText, process.env.PHONE_NUMBER_ID).catch(err => {
-      console.error('Failed to notify human agent via WhatsApp:', err.message);
+
+    // First attempt: free-text (works within 24h window)
+    sendWhatsAppMessage(humanAgentPhone, agentAlertText, process.env.PHONE_NUMBER_ID).catch(async (err) => {
+      console.warn('Free-text alert to agent failed (window likely closed):', err.message);
+      // Fallback: send approved template so alert always gets through
+      const templateName = process.env.HANDOFF_TEMPLATE_NAME || 'hello_world';
+      const langCode = process.env.HANDOFF_TEMPLATE_LANG || 'en_US';
+      try {
+        await sendWhatsAppTemplate(humanAgentPhone, templateName, langCode, [], process.env.PHONE_NUMBER_ID);
+        console.log('Fallback template alert sent to agent.');
+        // After template opens the window, send the full detail as a follow-up text
+        setTimeout(() => {
+          sendWhatsAppMessage(humanAgentPhone, agentAlertText, process.env.PHONE_NUMBER_ID)
+            .catch(e => console.error('Follow-up alert text failed:', e.message));
+        }, 3000);
+      } catch (tplErr) {
+        console.error('Template fallback also failed:', tplErr.message);
+      }
     });
 }
 }
